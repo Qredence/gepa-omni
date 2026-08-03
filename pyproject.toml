@@ -1,0 +1,34 @@
+[project]
+name = "gepa-optimize-anything"
+version = "0.1.0"
+description = "Developer tooling and tests for the GEPA Optimize Anything plugin."
+requires-python = ">=3.10"
+dependencies = []
+
+# GEPA is deliberately supplied by the consuming environment. The Omni
+# engines require the maintained engine-capable fork, whose URL and commit
+# are deployment configuration rather than a dependency of this repository.
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.15.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "tools"]
+pythonpath = ["skills/gepa-optimize-anything/scripts", "tools"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+exclude = ["tests"]
+
+[tool.ruff.lint]
+extend-select = ["C901"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 18
+
+[tool.uv]
+package = false
