@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CANONICAL_PLUGIN_NAME = "gepa-optimize-anything"
+CANONICAL_PLUGIN_NAME = "fleet-omni"
 SHIPPED_PATHS = (Path(".codex-plugin"), Path("skills"), Path("LICENSE"))
 
 
@@ -62,7 +62,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         required=True,
-        help="Empty external directory named gepa-optimize-anything",
+        help="Empty external directory named fleet-omni",
     )
     return parser
 

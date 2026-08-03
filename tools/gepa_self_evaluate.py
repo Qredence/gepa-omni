@@ -30,7 +30,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = REPO_ROOT
-STAGED_PLUGIN_NAME = "gepa-optimize-anything"
+STAGED_PLUGIN_NAME = "fleet-omni"
 SCRIPT_DIR = PLUGIN_ROOT / "skills" / "gepa-optimize-anything" / "scripts"
 PREFLIGHT = SCRIPT_DIR / "preflight.py"
 TARGET_RELATIVE = Path("skills/gepa-optimize-anything/scripts/codex_agent_proposer.py")
