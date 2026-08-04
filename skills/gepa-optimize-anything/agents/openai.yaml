@@ -1,6 +1,0 @@
-interface:
-  display_name: "GEPA Optimize Anything"
-  short_description: "Optimize prompts and code with GEPA"
-  default_prompt: "Use $gepa-optimize-anything to optimize this candidate against my evaluator and choose the best engine."
-policy:
-  allow_implicit_invocation: true

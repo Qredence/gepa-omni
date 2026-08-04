@@ -1,9 +1,9 @@
 ---
-name: gepa-optimize-anything
+name: gepa-omni-skill
 description: Optimize scorable text artifacts—prompts, code, configs, schemas, SQL, regexes, or agent instructions—with GEPA's evaluator-driven search. Use when tuning, comparing, or automatically improving a candidate from objective metrics, execution feedback, or LLM-as-judge scores.
 ---
 
-# GEPA optimize anything
+# GEPA Omni skill
 
 Use the engine-pluggable `gepa.optimize_anything.optimize_anything` API to search over a prompt, program, configuration, schema, SQL query, regular expression, or agent instruction. The evaluator returns a higher-is-better score and useful feedback.
 
@@ -14,7 +14,7 @@ Use the engine-pluggable `gepa.optimize_anything.optimize_anything` API to searc
 3. Return concrete failures, outputs, diffs, and partial-credit signals in evaluator `info`.
 4. Choose an engine: `gepa`, `best_of_n`, `autoresearch`, or `meta_harness`. Use the composition helpers for Omni-style multi-engine search.
 5. Set an explicit `max_evals` or `max_token_cost`, and keep `run_dir` and `output_dir` outside the checkout when agents need a workspace.
-6. Run `python skills/gepa-optimize-anything/scripts/preflight.py --engine <engine> --agent-backend pi` for the Claude-free agent profile before a long run.
+6. Run `python skills/gepa-omni-skill/scripts/preflight.py --engine <engine> --agent-backend pi` for the Claude-free agent profile before a long run.
 7. Inspect `result.best_candidate`, `result.best_score`, `result.total_evals`, `result.eval_log`, and `result.metadata`. Use `test_set` for an unbiased held-out measurement.
 
 ## Engine selection
@@ -58,7 +58,7 @@ when running the plugin locally:
 ```bash
 GEPA_OMNI_SPEC='gepa[full] @ git+https://<maintained-gepa-fork>/<org>/<repo>.git@<commit>'
 uv run --project . --with "$GEPA_OMNI_SPEC" \
-  python skills/gepa-optimize-anything/scripts/preflight.py \
+  python skills/gepa-omni-skill/scripts/preflight.py \
   --engine omni --agent-backend pi
 ```
 

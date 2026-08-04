@@ -1,0 +1,19 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local virtual environments and development metadata
+.venv/
+venv/
+uv.lock
+
+# Local plugin evaluation and proposal artifacts
+.plugin-eval/
+external-runs/
+runs/
+
+# Operating-system metadata
+.DS_Store

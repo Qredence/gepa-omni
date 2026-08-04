@@ -10,7 +10,7 @@ from subprocess import TimeoutExpired
 from unittest.mock import patch
 
 # fmt: off
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "skills" / "gepa-optimize-anything" / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "skills" / "gepa-omni-skill" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import codex_agent_proposer as proposer_module  # noqa: E402

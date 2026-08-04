@@ -17,7 +17,7 @@ sys.path.insert(0, str(TOOLS_DIR))
 PROPOSER_DIR = (
     PROJECT_ROOT
     / "skills"
-    / "gepa-optimize-anything"
+    / "gepa-omni-skill"
     / "scripts"
 )
 sys.path.insert(0, str(PROPOSER_DIR))

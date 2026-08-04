@@ -6,7 +6,7 @@ plugin. It never writes candidates into the checkout. Run it from an
 environment that has ``gepa[full]``, ``pytest``, ``ruff``, and the Codex CLI:
 
     uv run --with "gepa[full] @ git+https://github.com/gepa-ai/gepa.git" \
-        python skills/gepa-optimize-anything/scripts/self_evaluate.py \
+        python skills/gepa-omni-skill/scripts/self_evaluate.py \
         --model <codex-model> \
         --plugin-eval-command "node /path/to/plugin-eval.js"
 """
@@ -30,10 +30,10 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = REPO_ROOT
-STAGED_PLUGIN_NAME = "fleet-omni"
-SCRIPT_DIR = PLUGIN_ROOT / "skills" / "gepa-optimize-anything" / "scripts"
+STAGED_PLUGIN_NAME = "gepa-omni"
+SCRIPT_DIR = PLUGIN_ROOT / "skills" / "gepa-omni-skill" / "scripts"
 PREFLIGHT = SCRIPT_DIR / "preflight.py"
-TARGET_RELATIVE = Path("skills/gepa-optimize-anything/scripts/codex_agent_proposer.py")
+TARGET_RELATIVE = Path("skills/gepa-omni-skill/scripts/codex_agent_proposer.py")
 TEST_RELATIVE = Path("tests/test_codex_agent_proposer.py")
 COMPONENT = "codex_agent_proposer_py"
 DEFAULT_CHECK_TIMEOUT_SECONDS = 180.0

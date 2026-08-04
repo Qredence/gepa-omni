@@ -103,7 +103,7 @@ The proposer preserves `codex_stdout.jsonl`, `codex_stderr.log`,
 Run the preflight before a long run:
 
 ```bash
-python skills/gepa-optimize-anything/scripts/preflight.py --engine codex
+python skills/gepa-omni-skill/scripts/preflight.py --engine codex
 ```
 
 The preflight checks the current launcher API, the GEPA engine, the custom

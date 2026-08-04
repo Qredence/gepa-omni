@@ -1,7 +1,7 @@
 [project]
-name = "gepa-optimize-anything"
+name = "gepa-omni"
 version = "0.1.0"
-description = "Developer tooling and tests for the GEPA Optimize Anything plugin."
+description = "Developer tooling and tests for the GEPA Omni plugin."
 requires-python = ">=3.10"
 dependencies = []
 
@@ -17,7 +17,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "tools"]
-pythonpath = ["skills/gepa-optimize-anything/scripts", "tools"]
+pythonpath = ["skills/gepa-omni-skill/scripts", "tools"]
 
 [tool.ruff]
 target-version = "py310"

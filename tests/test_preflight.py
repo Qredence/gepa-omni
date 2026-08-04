@@ -13,7 +13,7 @@ from unittest.mock import patch
 SCRIPT_DIR = (
     Path(__file__).resolve().parents[1]
     / "skills"
-    / "gepa-optimize-anything"
+    / "gepa-omni-skill"
     / "scripts"
 )
 REFERENCE_ROOT = SCRIPT_DIR.parent
