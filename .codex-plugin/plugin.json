@@ -4,7 +4,7 @@
   "description": "Optimize scorable prompts, code, configs, schemas, SQL, regexes, and agent instructions with GEPA's engine-pluggable search.",
   "author": {
     "name": "GEPA",
-    "url": "https://github.com/gepa-ai/gepa"
+    "url": "https://github.com/Qredence/fleet-gepa-omni"
   },
   "homepage": "https://gepa-ai.github.io/gepa/",
   "repository": "https://github.com/gepa-ai/gepa",
@@ -28,7 +28,7 @@
       "Interactive",
       "Read"
     ],
-    "websiteURL": "https://gepa-ai.github.io/gepa/",
+    "websiteURL": "https://github.com/Qredence/fleet-gepa-omni",
     "privacyPolicyURL": "https://gepa-ai.github.io/gepa/",
     "termsOfServiceURL": "https://gepa-ai.github.io/gepa/",
     "defaultPrompt": [
