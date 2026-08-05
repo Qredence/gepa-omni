@@ -27,6 +27,18 @@ class FakeConfig:
         self.kwargs = kwargs
 
 
+class FakeCodexRunner:
+    def __init__(
+        self,
+        *,
+        persistent: bool = False,
+        sandbox: bool = True,
+        input_cost_per_million: float | None = None,
+        output_cost_per_million: float | None = None,
+    ) -> None:
+        del persistent, sandbox, input_cost_per_million, output_cost_per_million
+
+
 def fake_gepa_module(engines: list[str] | None = None) -> tuple[ModuleType, ModuleType]:
     gepa = ModuleType("gepa")
     optimize = ModuleType("gepa.optimize_anything")
@@ -58,6 +70,13 @@ class PreflightTests(unittest.TestCase):
         missing = missing or set()
         return lambda name: None if name in missing else f"/usr/bin/{name}"
 
+    def _codex_modules(self, *, include_runner: bool = True) -> dict[str, ModuleType]:
+        oa = ModuleType("gepa.oa")
+        agent_runner = ModuleType("gepa.oa.agent_runner")
+        if include_runner:
+            agent_runner.CodexAgentRunner = FakeCodexRunner
+        return {"gepa.oa": oa, "gepa.oa.agent_runner": agent_runner}
+
     def test_engine_capable_surface_passes_for_autoresearch(self) -> None:
         output = io.StringIO()
         with (
@@ -70,10 +89,99 @@ class PreflightTests(unittest.TestCase):
             patch.dict(os.environ, {"OPENAI_API_KEY": "test", "ANTHROPIC_API_KEY": "test"}),
             redirect_stdout(output),
         ):
-            result = preflight.main(["--engine", "autoresearch"])
+            result = preflight.main(["--engine", "autoresearch", "--agent-backend", "claude"])
 
         self.assertEqual(result, 0)
         self.assertIn("All preflight checks passed", output.getvalue())
+
+    def test_codex_is_the_default_backend(self) -> None:
+        self.assertEqual(preflight._parse_args([]).agent_backend, "codex")
+
+    def test_codex_backend_checks_cli_fork_runner_and_pricing(self) -> None:
+        output = io.StringIO()
+        modules = {
+            "gepa": self.gepa,
+            "gepa.optimize_anything": self.optimize,
+            **self._codex_modules(),
+        }
+        with (
+            patch.dict(sys.modules, modules),
+            patch.object(preflight.shutil, "which", side_effect=self._which()),
+            patch.object(preflight.sys, "platform", "darwin"),
+            redirect_stdout(output),
+        ):
+            result = preflight.main(
+                [
+                    "--engine",
+                    "autoresearch",
+                    "--agent-backend",
+                    "codex",
+                    "--max-token-cost",
+                    "1.0",
+                    "--codex-input-cost-per-million",
+                    "2.0",
+                    "--codex-output-cost-per-million",
+                    "8.0",
+                ]
+            )
+
+        self.assertEqual(result, 0)
+        self.assertIn("CodexAgentRunner", output.getvalue())
+        self.assertIn("All preflight checks passed", output.getvalue())
+
+    def test_codex_backend_reports_missing_cli(self) -> None:
+        output = io.StringIO()
+        with (
+            patch.dict(
+                sys.modules,
+                {"gepa": self.gepa, "gepa.optimize_anything": self.optimize, **self._codex_modules()},
+            ),
+            patch.object(preflight.shutil, "which", side_effect=self._which({"codex"})),
+            patch.object(preflight.sys, "platform", "darwin"),
+            redirect_stdout(output),
+        ):
+            result = preflight.main(["--engine", "meta_harness", "--agent-backend", "codex"])
+
+        self.assertEqual(result, 1)
+        self.assertIn("codex", output.getvalue())
+
+    def test_codex_backend_reports_missing_fork_runner(self) -> None:
+        output = io.StringIO()
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "gepa": self.gepa,
+                    "gepa.optimize_anything": self.optimize,
+                    **self._codex_modules(include_runner=False),
+                },
+            ),
+            patch.object(preflight.shutil, "which", side_effect=self._which()),
+            patch.object(preflight.sys, "platform", "darwin"),
+            redirect_stdout(output),
+        ):
+            result = preflight.main(["--engine", "autoresearch", "--agent-backend", "codex"])
+
+        self.assertEqual(result, 1)
+        self.assertIn("Codex agent-runner extension", output.getvalue())
+
+    def test_codex_backend_rejects_incomplete_pricing(self) -> None:
+        output = io.StringIO()
+        with (
+            patch.dict(
+                sys.modules,
+                {"gepa": self.gepa, "gepa.optimize_anything": self.optimize, **self._codex_modules()},
+            ),
+            patch.object(preflight.shutil, "which", side_effect=self._which()),
+            patch.object(preflight.sys, "platform", "darwin"),
+            redirect_stdout(output),
+        ):
+            result = preflight.main(
+                ["--engine", "autoresearch", "--agent-backend", "codex", "--max-token-cost", "1.0"]
+            )
+
+        self.assertEqual(result, 1)
+        self.assertIn("pricing is complete", output.getvalue())
 
     def test_missing_agent_runtime_is_actionable(self) -> None:
         output = io.StringIO()
@@ -90,7 +198,7 @@ class PreflightTests(unittest.TestCase):
             patch.object(preflight.sys, "platform", "darwin"),
             redirect_stdout(output),
         ):
-            result = preflight.main(["--engine", "meta_harness"])
+            result = preflight.main(["--engine", "meta_harness", "--agent-backend", "claude"])
 
         self.assertEqual(result, 1)
         self.assertIn("claude", output.getvalue())
@@ -190,7 +298,7 @@ class PreflightTests(unittest.TestCase):
             patch.object(preflight.sys, "platform", "linux"),
             redirect_stdout(output),
         ):
-            result = preflight.main(["--engine", "meta_harness"])
+            result = preflight.main(["--engine", "meta_harness", "--agent-backend", "claude"])
 
         self.assertEqual(result, 1)
         self.assertIn("bwrap", output.getvalue())
@@ -247,7 +355,7 @@ class PreflightTests(unittest.TestCase):
             patch.object(preflight.sys, "platform", "darwin"),
             redirect_stdout(output),
         ):
-            result = preflight.main(["--engine", "omni"])
+            result = preflight.main(["--engine", "omni", "--agent-backend", "claude"])
 
         self.assertEqual(result, 0)
         self.assertIn("composition helpers", output.getvalue())

@@ -8,10 +8,11 @@ index, install it with:
 uv add "gepa[full] @ git+https://<maintained-gepa-fork>/<org>/<repo>.git@<commit>"
 ```
 
-The adapter is used by the upstream `gepa` engine only. `autoresearch` and
-`meta_harness` are separate engine implementations; the Claude-free profile
-uses the maintained fork's Pi `AgentRunner` and does not route those engines
-through this Codex adapter.
+There are two deliberately separate Codex boundaries. `CodexAgentProposer` is
+the read-only custom proposer used by the `gepa` engine. The maintained GEPA
+fork also exposes a writable `CodexAgentRunner` for `autoresearch` and
+`meta_harness`; those engines edit their external workspaces and run
+`eval.sh`. The runner never falls back to Pi or Claude.
 
 `CodexAgentProposer` implements GEPA's custom proposer contract:
 
@@ -99,6 +100,68 @@ It never grants write or unrestricted access to the Codex proposal process.
 The proposer preserves `codex_stdout.jsonl`, `codex_stderr.log`,
 `response.json`, `usage.json`, and `error.txt` under each proposal directory.
 
+## Codex-backed AutoResearch and Meta-Harness
+
+The plugin's Omni defaults route both writable agent engines through the fork's
+Codex runner. Configure the two engine-specific blocks explicitly when using
+the public launcher directly:
+
+```python
+codex_agent_settings = {
+    "agent_backend": "codex",
+    "codex_command": "codex",
+    "model": "gpt-5-codex",  # omit to use the authenticated CLI default
+    "codex_input_cost_per_million": 2.0,
+    "codex_output_cost_per_million": 8.0,
+}
+
+autoresearch = OptimizeAnythingConfig(
+    engine="autoresearch",
+    max_evals=100,
+    max_token_cost=5.0,
+    sandbox=True,
+    engine_config={
+        **codex_agent_settings,
+        "ralph": True,
+        "max_no_eval_seconds": 300,
+    },
+)
+
+meta_harness = OptimizeAnythingConfig(
+    engine="meta_harness",
+    max_evals=100,
+    max_token_cost=5.0,
+    sandbox=True,
+    engine_config={
+        **codex_agent_settings,
+        "max_iterations": 20,
+        "max_candidates_per_iter": 3,
+        "timeout_seconds": 600,
+    },
+)
+```
+
+AutoResearch launches one non-ephemeral Codex thread and uses
+`codex exec resume <thread_id>` for Ralph continuations. Meta-Harness launches
+a fresh ephemeral thread for every iteration while retaining the shared
+frontier and workspace. Each invocation keeps its command, thread id, JSONL
+stdout, stderr, usage, completion state, and cost estimate under the external
+run directory.
+
+Codex always maps `sandbox=True` to `--sandbox workspace-write`. The runner
+explicitly enables workspace-write network access so `eval.sh` can reach the
+local evaluation server; this remains filesystem-sandboxed and does not grant
+unrestricted host access. The workspace is the engine's external temporary/run
+directory, never the plugin checkout. `sandbox=False` is rejected; it does not mean unrestricted Codex access. If
+`max_token_cost` is set, both pricing rates are required and validated before
+the process starts. If no USD cap is requested, usage-only runs remain valid;
+when rates are absent their cost estimate is recorded as unknown rather than
+reported as a real zero.
+
+Pi and Claude remain available only when selected explicitly with
+`agent_backend="pi"` or `agent_backend="claude"`. Pi uses its fork runner and
+OS jail; the existing Claude paths retain their upstream behavior.
+
 ## Prerequisites
 
 - Install `gepa[full]` in the evaluator's project.
@@ -111,6 +174,8 @@ Run the preflight before a long run:
 
 ```bash
 python skills/gepa-omni-skill/scripts/preflight.py --engine codex
+python skills/gepa-omni-skill/scripts/preflight.py --engine omni
+python skills/gepa-omni-skill/scripts/preflight.py --engine autoresearch --agent-backend pi
 ```
 
 The preflight checks the current launcher API, the GEPA engine, the custom

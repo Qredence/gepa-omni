@@ -4,8 +4,9 @@ GEPA Omni is a Codex plugin for improving scorable artifacts—prompts, code,
 configurations, schemas, SQL, regular expressions, and agent instructions—
 with evaluator-driven search from [GEPA](https://github.com/gepa-ai/gepa).
 
-The plugin includes engine-pluggable workflows, Codex and Claude-free Pi
-proposers, read-only proposal isolation, and diagnostics for every proposal.
+The plugin includes engine-pluggable workflows, a read-only Codex proposer for
+GEPA, writable Codex-backed AutoResearch and Meta-Harness engines, explicit Pi
+and Claude alternatives, and diagnostics for every proposal.
 
 ## Repository layout
 
@@ -24,8 +25,8 @@ Requirements:
 - Python 3.10 or newer
 - [`uv`](https://docs.astral.sh/uv/)
 - An engine-capable `gepa[full]` environment supplied by the consumer
-- `codex` for the Codex proposer, or an authenticated `pi` plus its runtime
-  prerequisites for the Claude-free profile
+- an authenticated `codex` CLI (the default agent backend), or an authenticated
+  `pi`/Claude CLI when explicitly selected
 
 Install the development tools and run the deterministic checks:
 
@@ -39,6 +40,7 @@ Run the preflight for an engine before a long optimization:
 
 ```bash
 python3 skills/gepa-omni-skill/scripts/preflight.py --engine codex
+python3 skills/gepa-omni-skill/scripts/preflight.py --engine omni
 python3 skills/gepa-omni-skill/scripts/preflight.py --engine omni --agent-backend pi
 ```
 
@@ -49,7 +51,10 @@ root dependency. Supply it explicitly when needed:
 export GEPA_OMNI_SPEC='gepa[full] @ git+https://<maintained-gepa-fork>/<org>/<repo>.git@<commit>'
 uv run --project . --with "$GEPA_OMNI_SPEC" \
   python3 skills/gepa-omni-skill/scripts/preflight.py \
-  --engine omni --agent-backend pi
+  --engine omni --agent-backend codex \
+  --max-token-cost 5 \
+  --codex-input-cost-per-million 2 \
+  --codex-output-cost-per-million 8
 ```
 
 See the skill references for the [API](skills/gepa-omni-skill/references/api.md),

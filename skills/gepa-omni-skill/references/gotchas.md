@@ -85,14 +85,21 @@ unexpected failures behind a success-shaped result.
 
 ## 10. Agent runtime prerequisites are hard requirements
 
-- The upstream agent engines use Claude; this plugin's maintained Claude-free
-  profile uses `agent_backend="pi"` and the pinned fork's Pi runner.
+- The plugin defaults AutoResearch and Meta-Harness to `agent_backend="codex"`
+  through the maintained fork's writable Codex runner. Pi and Claude remain
+  explicit alternatives.
+- Codex always uses `--sandbox workspace-write` against the external engine
+  workspace and explicitly enables workspace-write network access for the local
+  evaluator. `sandbox=False` is rejected; there is no unrestricted fallback.
+- When `max_token_cost` is set for Codex, both input and output USD-per-million
+  token rates are required and validated before launch. Without a USD cap,
+  usage-only runs are allowed but cost is marked unknown when rates are absent.
 - Pi requires `jq` and `curl` for AutoResearch, plus `bwrap` on Linux or
   `sandbox-exec` on macOS when `sandbox=True`.
 - Pi's `--tools` allowlist is not an OS security boundary. A missing OS
   sandbox is a hard preflight failure; there is no silent unsandboxed fallback.
-- Do not assume the local Codex proposer drives AutoResearch or Meta-Harness.
-  It is a custom proposer for the `gepa` backend.
+- Do not conflate the read-only `CodexAgentProposer` used by `gepa` with the
+  writable fork `CodexAgentRunner` used by AutoResearch and Meta-Harness.
 - Keep `run_dir` and `output_dir` outside the checkout when agents need a
   workspace or persistent diagnostics.
 

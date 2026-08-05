@@ -1,8 +1,9 @@
-# Pi-backed agent engines
+# Pi-backed agent engines (explicit alternative)
 
-The Claude-free Omni profile uses the maintained GEPA fork's generic
-`AgentRunner` extension. It does not copy AutoResearch or Meta-Harness into
-the plugin and it does not silently fall back to Claude.
+The plugin's agent-engine default is Codex. Select `agent_backend="pi"` when
+you want the maintained GEPA fork's generic `AgentRunner` extension instead.
+It does not copy AutoResearch or Meta-Harness into the plugin and it does not
+silently fall back to Claude.
 
 ## Configuration
 
@@ -64,7 +65,7 @@ provider. It does not expose the repository checkout as a writable path.
 Install the fork externally and pin its URL and commit in the consuming
 environment. The repository root intentionally does not add GEPA as a
 dependency. Follow the canonical [local setup](../SKILL.md#local-setup),
-using `--engine omni --agent-backend pi` for this profile.
+using `--engine omni --agent-backend pi` for this explicit profile.
 
 For a deployed fork, replace the file URL with the maintained Git URL and
 commit. Authenticate `pi` and its selected provider first. The agent-engine

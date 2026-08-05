@@ -10,16 +10,17 @@ Examples::
     python preflight.py --engine omni
     GEPA_REFLECTION_LM=anthropic/claude-sonnet-4-6 python preflight.py --test-lm
 
-The Codex proposer is an external adapter for the upstream ``gepa`` engine.
-The Claude backend remains available for upstream compatibility. The plugin's
-Claude-free profile uses ``--agent-backend pi`` and requires the maintained
-GEPA fork's Pi runner extension.
+The Codex proposer is an external adapter for the upstream ``gepa`` engine,
+while the maintained fork supplies the writable Codex runner for
+``autoresearch`` and ``meta_harness``. Claude and Pi remain explicit backend
+alternatives.
 """
 
 from __future__ import annotations
 
 import argparse
 import inspect
+import math
 import os
 import shutil
 import sys
@@ -127,8 +128,15 @@ def _check_engine_available(engine: str, available: set[str]) -> None:
     )
 
 
-def _check_agent_tools(engine: str, backend: str, pi_command: str = "pi") -> None:
-    required = [pi_command if backend == "pi" else "claude"]
+def _check_agent_tools(
+    engine: str,
+    backend: str,
+    pi_command: str = "pi",
+    codex_command: str = "codex",
+) -> None:
+    required = [
+        codex_command if backend == "codex" else pi_command if backend == "pi" else "claude"
+    ]
     if engine in {"autoresearch", "meta_harness"}:
         required.extend(("jq", "curl"))
     for tool in required:
@@ -140,6 +148,8 @@ def _check_agent_tools(engine: str, backend: str, pi_command: str = "pi") -> Non
         )
         if executable:
             print(f"      {tool} -> {executable}")
+    if backend == "codex":
+        return
     if sys.platform.startswith("linux"):
         executable = shutil.which("bwrap")
         check(
@@ -195,6 +205,8 @@ def _check_pi_surface(gepa_available: bool) -> None:
             ),
         )
         print(f"      {exc}")
+
+
     try:
         from pi_agent_proposer import PiAgentProposer
 
@@ -226,15 +238,48 @@ def _check_pi_surface(gepa_available: bool) -> None:
         print(f"      {exc}")
 
 
-def _check_codex_compatibility(gepa_available: bool) -> None:
-    cli = shutil.which("codex")
+def _check_codex_runner_surface(gepa_available: bool) -> None:
+    if not gepa_available:
+        return
+    try:
+        from gepa.oa.agent_runner import CodexAgentRunner
+
+        constructor = inspect.signature(CodexAgentRunner)
+        check(
+            "GEPA fork exposes CodexAgentRunner",
+            callable(CodexAgentRunner),
+            "install the maintained GEPA fork with the Codex runner extension",
+        )
+        check(
+            "CodexAgentRunner exposes workspace-write and session controls",
+            {"persistent", "sandbox", "input_cost_per_million", "output_cost_per_million"}.issubset(
+                constructor.parameters
+            ),
+            "refresh the maintained GEPA fork",
+        )
+    except Exception as exc:
+        check(
+            "GEPA fork exposes the Codex agent-runner extension",
+            False,
+            (
+                "install the maintained engine-capable GEPA fork; upstream PyPI "
+                "releases without CodexAgentRunner are unsupported"
+            ),
+        )
+        print(f"      {exc}")
+
+
+def _check_codex_compatibility(gepa_available: bool, codex_command: str = "codex") -> None:
+    cli = shutil.which(codex_command)
     check(
-        "`codex` CLI on PATH (used by the GEPA proposer)",
+        f"`{codex_command}` CLI on PATH (used by the GEPA proposer)",
         bool(cli),
-        "install and authenticate the Codex CLI",
+        f"install and authenticate the Codex CLI at {codex_command!r}",
     )
     if cli:
-        print(f"      codex -> {cli}")
+        print(f"      {codex_command} -> {cli}")
+
+    _check_codex_runner_surface(gepa_available)
 
     try:
         from codex_agent_proposer import CodexAgentProposer
@@ -307,6 +352,35 @@ def _check_lm_credentials(engine: str, backend: str = "claude") -> str:
     return effective
 
 
+def _check_codex_pricing(args: argparse.Namespace) -> None:
+    if args.agent_backend != "codex":
+        return
+    input_rate = args.codex_input_cost_per_million
+    output_rate = args.codex_output_cost_per_million
+    max_token_cost = args.max_token_cost
+    values_valid = all(
+        value is None
+        or isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and value >= 0
+        and math.isfinite(value)
+        for value in (input_rate, output_rate, max_token_cost)
+    )
+    check(
+        "Codex pricing values are finite and non-negative",
+        values_valid,
+        "use finite non-negative USD values",
+    )
+    complete = input_rate is not None and output_rate is not None
+    if input_rate is not None or output_rate is not None or max_token_cost is not None:
+        check(
+            "Codex input/output pricing is complete",
+            complete,
+            "provide both --codex-input-cost-per-million and "
+            "--codex-output-cost-per-million when pricing or a token cap is configured",
+        )
+
+
 def _test_lm(target: str) -> None:
     try:
         from gepa.lm import LM
@@ -344,28 +418,55 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--agent-backend",
-        choices=("claude", "pi"),
-        default="claude",
-        help="backend for autoresearch/meta_harness; use pi for the Claude-free profile",
+        choices=("codex", "pi", "claude"),
+        default="codex",
+        help="backend for autoresearch/meta_harness (default: codex)",
     )
     parser.add_argument(
         "--pi-command", default="pi", help="Pi executable used by the pi backend"
+    )
+    parser.add_argument(
+        "--codex-command", default="codex", help="Codex executable used by the codex backend"
+    )
+    parser.add_argument(
+        "--codex-input-cost-per-million",
+        type=float,
+        default=None,
+        help="input-token USD rate for capped Codex runs",
+    )
+    parser.add_argument(
+        "--codex-output-cost-per-million",
+        type=float,
+        default=None,
+        help="output-token USD rate for capped Codex runs",
+    )
+    parser.add_argument(
+        "--max-token-cost",
+        type=float,
+        default=None,
+        help="optional Codex USD cap to validate with the pricing rates",
     )
     return parser.parse_args(argv)
 
 
 def _check_selected_runtime(args: argparse.Namespace, gepa_available: bool) -> None:
     if args.engine == "codex":
-        _check_codex_compatibility(gepa_available)
+        _check_codex_compatibility(gepa_available, args.codex_command)
     elif args.engine in {"autoresearch", "meta_harness"}:
-        _check_agent_tools(args.engine, args.agent_backend, args.pi_command)
+        _check_agent_tools(args.engine, args.agent_backend, args.pi_command, args.codex_command)
+        _check_codex_pricing(args)
         if args.agent_backend == "pi":
             _check_pi_surface(gepa_available)
+        elif args.agent_backend == "codex":
+            _check_codex_runner_surface(gepa_available)
     elif args.engine == "omni":
-        _check_agent_tools("autoresearch", args.agent_backend, args.pi_command)
-        _check_agent_tools("meta_harness", args.agent_backend, args.pi_command)
+        _check_agent_tools("autoresearch", args.agent_backend, args.pi_command, args.codex_command)
+        _check_agent_tools("meta_harness", args.agent_backend, args.pi_command, args.codex_command)
+        _check_codex_pricing(args)
         if args.agent_backend == "pi":
             _check_pi_surface(gepa_available)
+        elif args.agent_backend == "codex":
+            _check_codex_runner_surface(gepa_available)
         if gepa_available:
             _check_lm_credentials("gepa", args.agent_backend)
             _check_lm_credentials("best_of_n", args.agent_backend)

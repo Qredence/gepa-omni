@@ -17,6 +17,7 @@ from typing import Any
 EXPLORATION_ENGINES = ("gepa", "autoresearch", "meta_harness")
 STANDALONE_ENGINES = (*EXPLORATION_ENGINES, "best_of_n")
 DEFAULT_CONTINUATION_ENGINE = "gepa"
+AGENT_BACKENDS = ("codex", "pi", "claude")
 
 
 class OmniBudgetError(ValueError):
@@ -126,12 +127,21 @@ def _engine_config(
     engine: str,
     *,
     run_dir: Path,
+    agent_backend: str,
     agent_model: str | None,
     codex_model: str | None,
     pi_command: str,
+    codex_command: str,
+    codex_input_cost_per_million: float | None,
+    codex_output_cost_per_million: float | None,
     codex_timeout_seconds: float,
     codex_proposer_factory: Callable[..., Any] | None,
 ) -> dict[str, Any]:
+    if agent_backend not in AGENT_BACKENDS:
+        raise ValueError(
+            f"unsupported agent_backend {agent_backend!r}; choose "
+            + ", ".join(AGENT_BACKENDS)
+        )
     if engine == "gepa":
         proposer = _make_codex_proposer(
             run_dir / "proposer",
@@ -148,21 +158,50 @@ def _engine_config(
             },
         }
     if engine == "autoresearch":
-        return {
-            "agent_backend": "pi",
-            "pi_command": pi_command,
-            "model": agent_model,
+        model = codex_model if agent_backend == "codex" and codex_model is not None else agent_model
+        if agent_backend == "claude" and model is None:
+            model = "claude-sonnet-4-6"
+        config: dict[str, Any] = {
+            "agent_backend": agent_backend,
             "ralph": True,
             "max_no_eval_seconds": 300,
         }
+        if model is not None:
+            config["model"] = model
+        if agent_backend == "pi":
+            config["pi_command"] = pi_command
+        elif agent_backend == "codex":
+            config.update(
+                {
+                    "codex_command": codex_command,
+                    "codex_input_cost_per_million": codex_input_cost_per_million,
+                    "codex_output_cost_per_million": codex_output_cost_per_million,
+                }
+            )
+        return config
     if engine == "meta_harness":
-        return {
-            "agent_backend": "pi",
-            "pi_command": pi_command,
-            "model": agent_model,
+        model = codex_model if agent_backend == "codex" and codex_model is not None else agent_model
+        if agent_backend == "claude" and model is None:
+            model = "claude-sonnet-4-6"
+        config = {
+            "agent_backend": agent_backend,
             "max_iterations": 20,
             "max_candidates_per_iter": 3,
         }
+        if model is not None:
+            config["model"] = model
+        if agent_backend == "pi":
+            config["pi_command"] = pi_command
+        elif agent_backend == "codex":
+            config.update(
+                {
+                    "codex_command": codex_command,
+                    "codex_input_cost_per_million": codex_input_cost_per_million,
+                    "codex_output_cost_per_million": codex_output_cost_per_million,
+                    "timeout_seconds": codex_timeout_seconds,
+                }
+            )
+        return config
     if engine == "best_of_n":
         return {"model": agent_model} if agent_model is not None else {}
     raise ValueError(f"unsupported optimizer engine: {engine}")
@@ -178,9 +217,13 @@ def _make_config(
     stop_at_score: float | None,
     max_concurrency: int,
     sandbox: bool,
+    agent_backend: str,
     agent_model: str | None,
     codex_model: str | None,
     pi_command: str,
+    codex_command: str,
+    codex_input_cost_per_million: float | None,
+    codex_output_cost_per_million: float | None,
     codex_timeout_seconds: float,
     codex_proposer_factory: Callable[..., Any] | None,
 ) -> Any:
@@ -193,9 +236,13 @@ def _make_config(
         "engine_config": _engine_config(
             engine,
             run_dir=run_dir,
+            agent_backend=agent_backend,
             agent_model=agent_model,
             codex_model=codex_model,
             pi_command=pi_command,
+            codex_command=codex_command,
+            codex_input_cost_per_million=codex_input_cost_per_million,
+            codex_output_cost_per_million=codex_output_cost_per_million,
             codex_timeout_seconds=codex_timeout_seconds,
             codex_proposer_factory=codex_proposer_factory,
         ),
@@ -241,9 +288,13 @@ def run_omni(
     stop_at_score: float | None = None,
     max_concurrency: int = 1,
     sandbox: bool = True,
+    agent_backend: str = "codex",
     agent_model: str | None = None,
     codex_model: str | None = None,
     pi_command: str = "pi",
+    codex_command: str = "codex",
+    codex_input_cost_per_million: float | None = None,
+    codex_output_cost_per_million: float | None = None,
     codex_timeout_seconds: float = 600.0,
     launcher: Any | None = None,
     config_cls: Callable[..., Any] | None = None,
@@ -272,9 +323,13 @@ def run_omni(
             stop_at_score=stop_at_score,
             max_concurrency=max_concurrency,
             sandbox=sandbox,
+            agent_backend=agent_backend,
             agent_model=agent_model,
             codex_model=codex_model,
             pi_command=pi_command,
+            codex_command=codex_command,
+            codex_input_cost_per_million=codex_input_cost_per_million,
+            codex_output_cost_per_million=codex_output_cost_per_million,
             codex_timeout_seconds=codex_timeout_seconds,
             codex_proposer_factory=codex_proposer_factory,
         )
@@ -297,9 +352,13 @@ def run_omni(
         stop_at_score=stop_at_score,
         max_concurrency=max_concurrency,
         sandbox=sandbox,
+        agent_backend=agent_backend,
         agent_model=agent_model,
         codex_model=codex_model,
         pi_command=pi_command,
+        codex_command=codex_command,
+        codex_input_cost_per_million=codex_input_cost_per_million,
+        codex_output_cost_per_million=codex_output_cost_per_million,
         codex_timeout_seconds=codex_timeout_seconds,
         codex_proposer_factory=codex_proposer_factory,
     )
@@ -325,9 +384,13 @@ def run_optimization(
     stop_at_score: float | None = None,
     max_concurrency: int = 1,
     sandbox: bool = True,
+    agent_backend: str = "codex",
     agent_model: str | None = None,
     codex_model: str | None = None,
     pi_command: str = "pi",
+    codex_command: str = "codex",
+    codex_input_cost_per_million: float | None = None,
+    codex_output_cost_per_million: float | None = None,
     codex_timeout_seconds: float = 600.0,
     launcher: Any | None = None,
     config_cls: Callable[..., Any] | None = None,
@@ -349,9 +412,13 @@ def run_optimization(
             stop_at_score=stop_at_score,
             max_concurrency=max_concurrency,
             sandbox=sandbox,
+            agent_backend=agent_backend,
             agent_model=agent_model,
             codex_model=codex_model,
             pi_command=pi_command,
+            codex_command=codex_command,
+            codex_input_cost_per_million=codex_input_cost_per_million,
+            codex_output_cost_per_million=codex_output_cost_per_million,
             codex_timeout_seconds=codex_timeout_seconds,
             launcher=launcher,
             config_cls=config_cls,
@@ -374,9 +441,13 @@ def run_optimization(
         stop_at_score=stop_at_score,
         max_concurrency=max_concurrency,
         sandbox=sandbox,
+        agent_backend=agent_backend,
         agent_model=agent_model,
         codex_model=codex_model,
         pi_command=pi_command,
+        codex_command=codex_command,
+        codex_input_cost_per_million=codex_input_cost_per_million,
+        codex_output_cost_per_million=codex_output_cost_per_million,
         codex_timeout_seconds=codex_timeout_seconds,
         codex_proposer_factory=codex_proposer_factory,
     )

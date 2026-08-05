@@ -114,8 +114,12 @@ class OmniPipelineTests(unittest.TestCase):
         )
         self.assertEqual(
             [config.kwargs["engine_config"]["agent_backend"] for config in configs[1:]],
-            ["pi", "pi"],
+            ["codex", "codex"],
         )
+        self.assertEqual(configs[1].kwargs["engine_config"]["codex_command"], "codex")
+        self.assertIsNone(configs[1].kwargs["engine_config"]["codex_input_cost_per_million"])
+        self.assertIsNone(configs[1].kwargs["engine_config"]["codex_output_cost_per_million"])
+        self.assertEqual(configs[2].kwargs["engine_config"]["timeout_seconds"], 600.0)
         self.assertTrue(configs[1].kwargs["engine_config"]["ralph"])
         self.assertEqual(configs[2].kwargs["engine_config"]["max_candidates_per_iter"], 3)
 
@@ -143,8 +147,54 @@ class OmniPipelineTests(unittest.TestCase):
                 self._run_omni(continuation_engine=engine)
                 config = self.launcher.optimize_calls[0][1]["config"]
                 self.assertEqual(config.kwargs["engine"], engine)
-                self.assertEqual(config.kwargs["engine_config"]["agent_backend"], "pi")
+                self.assertEqual(config.kwargs["engine_config"]["agent_backend"], "codex")
                 self.assertEqual(len(self.proposer_dirs), 1)
+
+    def test_agent_backend_and_codex_settings_propagate_to_both_engines(self) -> None:
+        self._run_omni(
+            agent_backend="codex",
+            codex_model="gpt-5-codex",
+            codex_command="/custom/bin/codex",
+            codex_input_cost_per_million=2.0,
+            codex_output_cost_per_million=8.0,
+            codex_timeout_seconds=45.0,
+        )
+        configs = self.launcher.best_of_calls[0][1]["configs"]
+        autoresearch_config = configs[1].kwargs["engine_config"]
+        meta_config = configs[2].kwargs["engine_config"]
+        for config in (autoresearch_config, meta_config):
+            self.assertEqual(config["agent_backend"], "codex")
+            self.assertEqual(config["codex_command"], "/custom/bin/codex")
+            self.assertEqual(config["model"], "gpt-5-codex")
+            self.assertEqual(config["codex_input_cost_per_million"], 2.0)
+            self.assertEqual(config["codex_output_cost_per_million"], 8.0)
+        self.assertEqual(autoresearch_config["max_no_eval_seconds"], 300)
+        self.assertEqual(meta_config["timeout_seconds"], 45.0)
+
+    def test_pi_and_claude_remain_explicit_agent_backend_options(self) -> None:
+        for backend in ("pi", "claude"):
+            with self.subTest(backend=backend):
+                self.launcher = FakeLauncher()
+                self.proposer_dirs = []
+                self._run_omni(agent_backend=backend, agent_model="provider/model")
+                configs = self.launcher.best_of_calls[0][1]["configs"]
+                self.assertEqual(
+                    [config.kwargs["engine_config"]["agent_backend"] for config in configs[1:]],
+                    [backend, backend],
+                )
+                if backend == "pi":
+                    self.assertEqual(configs[1].kwargs["engine_config"]["pi_command"], "pi")
+                else:
+                    self.assertNotIn("pi_command", configs[1].kwargs["engine_config"])
+
+    def test_claude_uses_its_default_model_when_no_model_is_supplied(self) -> None:
+        self._run_omni(agent_backend="claude")
+
+        configs = self.launcher.best_of_calls[0][1]["configs"]
+        self.assertEqual(
+            [config.kwargs["engine_config"]["model"] for config in configs[1:]],
+            ["claude-sonnet-4-6", "claude-sonnet-4-6"],
+        )
 
     def test_default_run_optimization_uses_omni_and_standalone_bypasses_it(self) -> None:
         result = omni_pipeline.run_optimization(
