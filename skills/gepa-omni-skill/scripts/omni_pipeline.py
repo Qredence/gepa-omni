@@ -163,10 +163,11 @@ def _engine_config(
             model = "claude-sonnet-4-6"
         config: dict[str, Any] = {
             "agent_backend": agent_backend,
-            "model": model,
             "ralph": True,
             "max_no_eval_seconds": 300,
         }
+        if model is not None:
+            config["model"] = model
         if agent_backend == "pi":
             config["pi_command"] = pi_command
         elif agent_backend == "codex":
@@ -184,10 +185,11 @@ def _engine_config(
             model = "claude-sonnet-4-6"
         config = {
             "agent_backend": agent_backend,
-            "model": model,
             "max_iterations": 20,
             "max_candidates_per_iter": 3,
         }
+        if model is not None:
+            config["model"] = model
         if agent_backend == "pi":
             config["pi_command"] = pi_command
         elif agent_backend == "codex":

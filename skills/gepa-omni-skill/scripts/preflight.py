@@ -269,15 +269,15 @@ def _check_codex_runner_surface(gepa_available: bool) -> None:
         print(f"      {exc}")
 
 
-def _check_codex_compatibility(gepa_available: bool) -> None:
-    cli = shutil.which("codex")
+def _check_codex_compatibility(gepa_available: bool, codex_command: str = "codex") -> None:
+    cli = shutil.which(codex_command)
     check(
-        "`codex` CLI on PATH (used by the GEPA proposer)",
+        f"`{codex_command}` CLI on PATH (used by the GEPA proposer)",
         bool(cli),
-        "install and authenticate the Codex CLI",
+        f"install and authenticate the Codex CLI at {codex_command!r}",
     )
     if cli:
-        print(f"      codex -> {cli}")
+        print(f"      {codex_command} -> {cli}")
 
     _check_codex_runner_surface(gepa_available)
 
@@ -451,7 +451,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def _check_selected_runtime(args: argparse.Namespace, gepa_available: bool) -> None:
     if args.engine == "codex":
-        _check_codex_compatibility(gepa_available)
+        _check_codex_compatibility(gepa_available, args.codex_command)
     elif args.engine in {"autoresearch", "meta_harness"}:
         _check_agent_tools(args.engine, args.agent_backend, args.pi_command, args.codex_command)
         _check_codex_pricing(args)
