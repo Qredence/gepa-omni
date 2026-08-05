@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Run a bounded, read-only GEPA self-evaluation for the Codex proposer.
+"""Run a bounded GEPA self-evaluation for the Codex proposer.
 
-The harness evaluates candidate proposer source in a temporary copy of the
-plugin. It never writes candidates into the checkout. Run it from an
-environment that has ``gepa[full]``, ``pytest``, ``ruff``, and the Codex CLI:
+The harness executes generated candidate source in a clean, temporary fixture.
+This is a trusted-development operation and requires the explicit
+``--allow-candidate-execution`` flag. It never writes candidates into the
+checkout. Run it from an environment that has ``gepa[full]``, ``pytest``,
+``ruff``, and the Codex CLI:
 
-    uv run --with "gepa[full] @ git+https://github.com/gepa-ai/gepa.git" \
+    uv run --with "gepa[full] @ git+https://<maintained-fork>/<org>/<repo>.git@<commit>" \
         python skills/gepa-omni-skill/scripts/self_evaluate.py \
+        --allow-candidate-execution \
         --model <codex-model> \
         --plugin-eval-command "node /path/to/plugin-eval.js"
 """
@@ -23,9 +26,15 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+try:
+    from .stage_plugin import stage
+except ImportError:  # pragma: no cover - used when executed as a script
+    from stage_plugin import stage
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -81,7 +90,11 @@ def _bounded(value: str, limit: int = MAX_DIAGNOSTIC_CHARS) -> str:
 
 
 def _run_command(
-    command: list[str], cwd: Path, timeout_seconds: float
+    command: list[str],
+    cwd: Path,
+    timeout_seconds: float,
+    *,
+    env: Mapping[str, str] | None = None,
 ) -> CommandResult:
     try:
         completed = subprocess.run(
@@ -91,6 +104,7 @@ def _run_command(
             text=True,
             timeout=timeout_seconds,
             check=False,
+            env=dict(env) if env is not None else None,
         )
     except subprocess.TimeoutExpired as exc:
         return CommandResult(
@@ -100,9 +114,7 @@ def _run_command(
             _text(exc.stderr),
             timed_out=True,
         )
-    return CommandResult(
-        tuple(command), completed.returncode, completed.stdout, completed.stderr
-    )
+    return CommandResult(tuple(command), completed.returncode, completed.stdout, completed.stderr)
 
 
 def _uv_command(project: Path, *args: str) -> list[str]:
@@ -124,8 +136,7 @@ def _plugin_eval_command(spec: str | None) -> list[str]:
         local_executable = Path(command[0]).expanduser().resolve()
         if not local_executable.is_file():
             raise FileNotFoundError(
-                "Plugin Eval executable was not found; pass "
-                "--plugin-eval-command 'node /path/to/plugin-eval.js'"
+                "Plugin Eval executable was not found; pass --plugin-eval-command 'node /path/to/plugin-eval.js'"
             )
         command[0] = str(local_executable)
     return command
@@ -157,21 +168,25 @@ def _run_candidate_checks(
     plugin_eval_command: list[str],
     check_timeout_seconds: float,
 ) -> dict[str, CommandResult]:
+    environment = _evaluation_environment(fixture)
     return {
         "tests": _run_command(
             _uv_command(fixture, "pytest", str(TEST_RELATIVE), "-q"),
             fixture,
             check_timeout_seconds,
+            env=environment,
         ),
         "ruff": _run_command(
             _uv_command(fixture, "ruff", "check", str(candidate_path)),
             fixture,
             check_timeout_seconds,
+            env=environment,
         ),
         "formatted": _run_command(
             _uv_command(fixture, "ruff", "format", "--check", str(candidate_path)),
             fixture,
             check_timeout_seconds,
+            env=environment,
         ),
         "analysis": _run_command(
             [
@@ -183,7 +198,23 @@ def _run_candidate_checks(
             ],
             fixture,
             check_timeout_seconds,
+            env=environment,
         ),
+    }
+
+
+def _evaluation_environment(fixture: Path) -> dict[str, str]:
+    """Run fixture commands without inheriting provider credentials."""
+
+    home = fixture / ".evaluation-home"
+    temp = fixture / ".evaluation-tmp"
+    home.mkdir(parents=True, exist_ok=True)
+    temp.mkdir(parents=True, exist_ok=True)
+    return {
+        "HOME": str(home),
+        "TMPDIR": str(temp),
+        "PATH": os.environ.get("PATH", ""),
+        "LANG": os.environ.get("LANG", "C.UTF-8"),
     }
 
 
@@ -200,11 +231,7 @@ def _parse_plugin_eval_result(
     checks = report.get("checks", [])
     if not isinstance(checks, list):
         checks = []
-    warning_ids = [
-        item.get("id")
-        for item in checks
-        if isinstance(item, dict) and item.get("status") == "warn"
-    ]
+    warning_ids = [item.get("id") for item in checks if isinstance(item, dict) and item.get("status") == "warn"]
 
     try:
         plugin_score = float(summary.get("score", 0.0) or 0.0)
@@ -226,9 +253,7 @@ def _evaluate_candidate_results(
     results: dict[str, CommandResult],
     example: dict[str, str] | None,
 ) -> CandidateEvaluation:
-    plugin_score, warning_ids, summary, analysis_error = _parse_plugin_eval_result(
-        results["analysis"]
-    )
+    plugin_score, warning_ids, summary, analysis_error = _parse_plugin_eval_result(results["analysis"])
     passed = {name: _command_passed(result) for name, result in results.items()}
     valid = all(passed.values()) and not analysis_error
     info = {
@@ -240,16 +265,10 @@ def _evaluate_candidate_results(
         "ruff_passed": passed["ruff"],
         "format_passed": passed["formatted"],
         "analysis_passed": passed["analysis"],
-        "tests_output": _bounded(
-            results["tests"].stdout + results["tests"].stderr
-        ),
+        "tests_output": _bounded(results["tests"].stdout + results["tests"].stderr),
         "ruff_output": _bounded(results["ruff"].stdout + results["ruff"].stderr),
-        "format_output": _bounded(
-            results["formatted"].stdout + results["formatted"].stderr
-        ),
-        "analysis_output": _bounded(
-            results["analysis"].stdout + results["analysis"].stderr
-        ),
+        "format_output": _bounded(results["formatted"].stdout + results["formatted"].stderr),
+        "analysis_output": _bounded(results["analysis"].stdout + results["analysis"].stderr),
         "analysis_error": analysis_error,
         "example": example or {},
     }
@@ -262,12 +281,22 @@ def evaluate_candidate(
     plugin_eval_command: list[str],
     check_timeout_seconds: float = DEFAULT_CHECK_TIMEOUT_SECONDS,
     example: dict[str, str] | None = None,
+    allow_candidate_execution: bool = False,
 ) -> CandidateEvaluation:
-    """Score one proposer candidate in an isolated plugin fixture."""
+    """Score one candidate after an explicit trusted-execution opt-in."""
+
+    if not allow_candidate_execution:
+        raise ValueError(
+            "candidate execution is disabled; pass allow_candidate_execution=True or use --allow-candidate-execution"
+        )
 
     with tempfile.TemporaryDirectory(prefix="gepa-self-eval-") as temp_dir:
         fixture = Path(temp_dir) / STAGED_PLUGIN_NAME
-        shutil.copytree(PLUGIN_ROOT, fixture)
+        stage(fixture)
+        test_path = fixture / TEST_RELATIVE
+        test_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(PLUGIN_ROOT / TEST_RELATIVE, test_path)
+        shutil.copy2(PLUGIN_ROOT / "pyproject.toml", fixture / "pyproject.toml")
         candidate_path = fixture / TARGET_RELATIVE
         candidate_path.write_text(candidate_text, encoding="utf-8")
         results = _run_candidate_checks(
@@ -285,9 +314,7 @@ def _print_json(value: dict[str, Any]) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--model", required=True, help="Explicit Codex model for proposals"
-    )
+    parser.add_argument("--model", required=True, help="Explicit Codex model for proposals")
     parser.add_argument(
         "--timeout-seconds",
         type=float,
@@ -319,6 +346,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--plugin-eval-command",
         help="Plugin Eval command, e.g. 'node /path/to/plugin-eval.js'",
     )
+    parser.add_argument(
+        "--allow-candidate-execution",
+        action="store_true",
+        help="Explicitly permit generated Python candidates to execute in a fixture",
+    )
     return parser
 
 
@@ -329,10 +361,7 @@ def _positive(value: float | int, name: str) -> None:
 
 def _proposal_errors(run_dir: Path) -> list[str]:
     proposal_root = run_dir / "proposer" / "proposals"
-    return [
-        path.read_text(encoding="utf-8", errors="replace")
-        for path in sorted(proposal_root.glob("*/error.txt"))
-    ]
+    return [path.read_text(encoding="utf-8", errors="replace") for path in sorted(proposal_root.glob("*/error.txt"))]
 
 
 def _all_proposals_failed(run_dir: Path, *, seed: str, best: str) -> bool:
@@ -340,9 +369,7 @@ def _all_proposals_failed(run_dir: Path, *, seed: str, best: str) -> bool:
     return (
         best == seed
         and bool(proposal_dirs)
-        and all(
-            (proposal_dir / "error.txt").is_file() for proposal_dir in proposal_dirs
-        )
+        and all((proposal_dir / "error.txt").is_file() for proposal_dir in proposal_dirs)
     )
 
 
@@ -354,9 +381,7 @@ def _write_best_artifacts(run_dir: Path, seed: str, best: str) -> None:
         fromfile="seed/codex_agent_proposer.py",
         tofile="best/codex_agent_proposer.py",
     )
-    (run_dir / "best_codex_agent_proposer.diff").write_text(
-        "".join(diff), encoding="utf-8"
-    )
+    (run_dir / "best_codex_agent_proposer.diff").write_text("".join(diff), encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -367,9 +392,9 @@ def main(argv: list[str] | None = None) -> int:
         _positive(args.max_metric_calls, "--max-metric-calls")
         _positive(args.max_candidate_proposals, "--max-candidate-proposals")
         plugin_eval_command = _plugin_eval_command(args.plugin_eval_command)
-        run_dir = _validate_run_dir(
-            args.run_dir or Path(tempfile.mkdtemp(prefix="gepa-self-evaluate-"))
-        )
+        if not args.allow_candidate_execution:
+            raise ValueError("candidate execution is disabled; pass --allow-candidate-execution")
+        run_dir = _validate_run_dir(args.run_dir or Path(tempfile.mkdtemp(prefix="gepa-self-evaluate-")))
     except (FileNotFoundError, ValueError) as exc:
         print(f"self-evaluation configuration error: {exc}", file=sys.stderr)
         return 2
@@ -391,6 +416,7 @@ def main(argv: list[str] | None = None) -> int:
         plugin_eval_command=plugin_eval_command,
         check_timeout_seconds=args.check_timeout_seconds,
         example={"phase": "baseline"},
+        allow_candidate_execution=args.allow_candidate_execution,
     )
     _print_json(
         {
@@ -417,8 +443,7 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError as exc:
         print(
             "GEPA self-evaluation requires the engine-capable `gepa[full]`; "
-            "run with `uv run --with "
-            "'gepa[full] @ git+https://github.com/gepa-ai/gepa.git'`: "
+            "provide a maintained engine-capable `gepa[full]` fork pinned to a commit: "
             f"{exc}",
             file=sys.stderr,
         )
@@ -430,19 +455,16 @@ def main(argv: list[str] | None = None) -> int:
         timeout_seconds=args.timeout_seconds,
     )
 
-    def evaluate(
-        candidate: dict[str, str], example: dict[str, str]
-    ) -> tuple[float, dict[str, Any]]:
+    def evaluate(candidate: dict[str, str], example: dict[str, str]) -> tuple[float, dict[str, Any]]:
         candidate_text = candidate.get(COMPONENT)
         if not isinstance(candidate_text, str):
-            return 0.0, {
-                "error": f"candidate is missing string component {COMPONENT!r}"
-            }
+            return 0.0, {"error": f"candidate is missing string component {COMPONENT!r}"}
         record = evaluate_candidate(
             candidate_text,
             plugin_eval_command=plugin_eval_command,
             check_timeout_seconds=args.check_timeout_seconds,
             example=example,
+            allow_candidate_execution=args.allow_candidate_execution,
         )
         return record.score, record.info
 
@@ -457,8 +479,7 @@ def main(argv: list[str] | None = None) -> int:
             valset=[{"phase": "validation"}],
             test_set=[{"phase": "held-out"}],
             objective=(
-                "Improve the proposer while preserving its public contract, "
-                "tests, formatting, and read-only behavior."
+                "Improve the proposer while preserving its public contract, tests, formatting, and read-only behavior."
             ),
             config=OptimizeAnythingConfig(
                 engine="gepa",
@@ -486,9 +507,7 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
     except Exception as exc:
-        print(
-            f"GEPA self-evaluation failed: {type(exc).__name__}: {exc}", file=sys.stderr
-        )
+        print(f"GEPA self-evaluation failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         print(f"Artifacts: {run_dir}", file=sys.stderr)
         return 2
 
@@ -502,6 +521,7 @@ def main(argv: list[str] | None = None) -> int:
         plugin_eval_command=plugin_eval_command,
         check_timeout_seconds=args.check_timeout_seconds,
         example={"phase": "final-best"},
+        allow_candidate_execution=args.allow_candidate_execution,
     )
     _write_best_artifacts(run_dir, seed, best)
     errors = _proposal_errors(run_dir)
@@ -524,8 +544,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     if unchanged_after_failure:
         print(
-            "All proposal attempts failed; inspect proposer/*/error.txt under "
-            f"{run_dir}",
+            f"All proposal attempts failed; inspect proposer/*/error.txt under {run_dir}",
             file=sys.stderr,
         )
         return 2

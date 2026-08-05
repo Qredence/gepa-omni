@@ -37,11 +37,11 @@ The proposer (reflection LM or agent) writes the next candidate by reading `info
 ```python
 return score, {
     "score": score,
-    "output": output,                 # what the candidate produced
+    "output": output,  # what the candidate produced
     "expected": example.get("gold"),  # what was wanted (if available)
-    "error_type": err_type,           # compile error / wrong answer / format violation / timeout
-    "error_detail": traceback_or_diff,# the actual message — concrete > vague
-    "passed_checks": [...],           # partial credit signals
+    "error_type": err_type,  # compile error / wrong answer / format violation / timeout
+    "error_detail": traceback_or_diff,  # the actual message — concrete > vague
+    "passed_checks": [...],  # partial credit signals
     "failed_checks": [...],
 }
 ```
@@ -66,11 +66,11 @@ as the score — and, importantly, return the judge's **written critique** as fe
 def evaluate(candidate, example):
     output = run_my_model(candidate, example)
     verdict = judge_lm(JUDGE_RUBRIC.format(task=example, answer=output))  # your judge call
-    score = verdict["rating"] / 10.0                  # normalize to a float, higher = better
+    score = verdict["rating"] / 10.0  # normalize to a float, higher = better
     return score, {
         "score": score,
         "output": output,
-        "critique": verdict["critique"],              # the judge's reasoning → drives better proposals
+        "critique": verdict["critique"],  # the judge's reasoning → drives better proposals
         "rubric_breakdown": verdict.get("by_criterion"),
     }
 ```
@@ -87,9 +87,8 @@ Fix it inside `evaluate` by averaging N samples:
 def evaluate(candidate, example, N=4):
     outs = [run_my_model(candidate, example) for _ in range(N)]
     scores = [grade(o, example) for o in outs]
-    score = sum(scores) / len(scores)           # mean correctness ~ pass@1 estimate
-    return score, {"score": score, "n": N,
-                   "samples": [{"out": o, "s": s} for o, s in zip(outs, scores)]}
+    score = sum(scores) / len(scores)  # mean correctness ~ pass@1 estimate
+    return score, {"score": score, "n": N, "samples": [{"out": o, "s": s} for o, s in zip(outs, scores)]}
 ```
 Trade-off: N× more eval calls (budget). Pick N to balance variance vs `OptimizeAnythingConfig.max_evals`.
 
@@ -119,7 +118,7 @@ Prefer a **gated** objective:
 def score_fn(result):
     if not (result["compiled"] and result["correct"]):
         return 0.0
-    return f(result["speedup"])   # e.g. min(speedup / target, 1.0), monotonically increasing
+    return f(result["speedup"])  # e.g. min(speedup / target, 1.0), monotonically increasing
 ```
 Then the only way to raise the score is to be correct **and** better on what you care about. See
 `gotchas.md` for the full reward-hacking story.

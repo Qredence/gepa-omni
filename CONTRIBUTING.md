@@ -7,6 +7,8 @@ Use Python 3.10+ and `uv`:
 ```bash
 uv sync --project . --group dev
 uv run pytest -q
+uv run ruff check .
+uv run ruff format --check .
 git diff --check
 ```
 
@@ -20,7 +22,10 @@ fork URL to the root dependency list.
   `skills/gepa-omni-skill/`.
 - Update focused tests when behavior changes.
 - Run `python3 tools/stage_plugin.py --output /tmp/gepa-omni` to verify the
-  installable payload when packaging changes.
+  installable payload when packaging changes. The staging output must contain
+  only tracked runtime files.
+- Run self-evaluation only with the explicit
+  `--allow-candidate-execution` opt-in and a pinned, engine-capable GEPA fork.
 - Keep proposer artifacts, evaluation runs, credentials, and generated caches
   out of Git.
 

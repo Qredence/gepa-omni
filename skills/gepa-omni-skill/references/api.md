@@ -109,10 +109,10 @@ the run for an unbiased comparison. When provided, inspect
 
 ```python
 config = OptimizeAnythingConfig(
-    engine="gepa",                    # or autoresearch, meta_harness, best_of_n
-    max_evals=300,                    # evaluation-server cap
-    max_token_cost=5.0,               # proposer/agent USD cap
-    stop_at_score=1.0,                # use when the metric has a known ceiling
+    engine="gepa",  # or autoresearch, meta_harness, best_of_n
+    max_evals=300,  # evaluation-server cap
+    max_token_cost=5.0,  # proposer/agent USD cap
+    stop_at_score=1.0,  # use when the metric has a known ceiling
     max_concurrency=16,
     run_dir="external-runs/example",
     output_dir="external-runs/example/output",
@@ -183,7 +183,7 @@ explore = optimize_best_of(
     valset=valset,
     objective=objective,
     configs=[
-        gepa_config,             # CodexAgentProposer locally
+        gepa_config,  # CodexAgentProposer locally
         autoresearch_codex_config,  # agent_backend="codex"
         meta_harness_codex_config,  # agent_backend="codex"
     ],
@@ -420,10 +420,10 @@ The launcher returns a `Result` with:
 
 ```python
 result.best_candidate  # str
-result.best_score      # float on the selection set
-result.total_evals     # int
-result.eval_log        # list[dict]
-result.metadata        # engine, budgets, costs, and output paths when supplied
+result.best_score  # float on the selection set
+result.total_evals  # int
+result.eval_log  # list[dict]
+result.metadata  # engine, budgets, costs, and output paths when supplied
 ```
 
 The GEPA metadata can include the full `gepa_result`; all engines may expose

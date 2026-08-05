@@ -14,12 +14,7 @@ from unittest.mock import patch
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TOOLS_DIR = PROJECT_ROOT / "tools"
 sys.path.insert(0, str(TOOLS_DIR))
-PROPOSER_DIR = (
-    PROJECT_ROOT
-    / "skills"
-    / "gepa-omni-skill"
-    / "scripts"
-)
+PROPOSER_DIR = PROJECT_ROOT / "skills" / "gepa-omni-skill" / "scripts"
 sys.path.insert(0, str(PROPOSER_DIR))
 
 import gepa_self_evaluate as self_evaluate_module  # noqa: E402
@@ -28,6 +23,13 @@ from codex_agent_proposer import CodexAgentProposer, CodexProcessError  # noqa: 
 
 
 class SelfEvaluateTests(unittest.TestCase):
+    def test_candidate_execution_requires_explicit_opt_in(self) -> None:
+        with self.assertRaisesRegex(ValueError, "allow_candidate_execution"):
+            self_evaluate_module.evaluate_candidate(
+                "candidate = True\n",
+                plugin_eval_command=["node", "plugin-eval.js"],
+            )
+
     def test_prompt_and_extracted_helpers_keep_contract(self) -> None:
         prompt = CodexAgentProposer._prompt(["prompt", "rubric"])
         for required in (
@@ -47,14 +49,10 @@ class SelfEvaluateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             proposal_dir = Path(temp_dir)
             output_path = proposal_dir / "codex_result.json"
-            output_path.write_text(
-                json.dumps({"new_texts": {"prompt": "new"}}), encoding="utf-8"
-            )
+            output_path.write_text(json.dumps({"new_texts": {"prompt": "new"}}), encoding="utf-8")
             proposer = CodexAgentProposer(proposal_dir)
             self.assertEqual(
-                proposer._parse_candidate_response(
-                    output_path, "", ["prompt"], proposal_dir
-                ),
+                proposer._parse_candidate_response(output_path, "", ["prompt"], proposal_dir),
                 {"prompt": "new"},
             )
             with patch.object(
@@ -65,9 +63,7 @@ class SelfEvaluateTests(unittest.TestCase):
                 with self.assertRaises(CodexProcessError):
                     proposer._start_process([], proposal_dir)
 
-    def _result(
-        self, command: list[str], returncode: int = 0
-    ) -> self_evaluate_module.CommandResult:
+    def _result(self, command: list[str], returncode: int = 0) -> self_evaluate_module.CommandResult:
         return self_evaluate_module.CommandResult(tuple(command), returncode, "", "")
 
     def test_passing_candidate_uses_plugin_score(self) -> None:
@@ -79,7 +75,11 @@ class SelfEvaluateTests(unittest.TestCase):
         )
 
         def run(
-            command: list[str], cwd: Path, timeout_seconds: float
+            command: list[str],
+            cwd: Path,
+            timeout_seconds: float,
+            *,
+            env: dict[str, str] | None = None,
         ) -> self_evaluate_module.CommandResult:
             if "plugin-eval" in " ".join(command) or "node" in command:
                 return self_evaluate_module.CommandResult(tuple(command), 0, report, "")
@@ -89,6 +89,7 @@ class SelfEvaluateTests(unittest.TestCase):
             result = self_evaluate_module.evaluate_candidate(
                 "candidate = True\n",
                 plugin_eval_command=["node", "plugin-eval.js"],
+                allow_candidate_execution=True,
             )
 
         self.assertTrue(result.valid)
@@ -99,7 +100,11 @@ class SelfEvaluateTests(unittest.TestCase):
         report = json.dumps({"summary": {"score": 99}, "checks": []})
 
         def run(
-            command: list[str], cwd: Path, timeout_seconds: float
+            command: list[str],
+            cwd: Path,
+            timeout_seconds: float,
+            *,
+            env: dict[str, str] | None = None,
         ) -> self_evaluate_module.CommandResult:
             if "pytest" in command:
                 return self._result(command, returncode=1)
@@ -111,6 +116,7 @@ class SelfEvaluateTests(unittest.TestCase):
             result = self_evaluate_module.evaluate_candidate(
                 "candidate = False\n",
                 plugin_eval_command=["node", "plugin-eval.js"],
+                allow_candidate_execution=True,
             )
 
         self.assertFalse(result.valid)
@@ -121,7 +127,11 @@ class SelfEvaluateTests(unittest.TestCase):
         report = json.dumps({"summary": {"score": "not-a-number"}, "checks": []})
 
         def run(
-            command: list[str], cwd: Path, timeout_seconds: float
+            command: list[str],
+            cwd: Path,
+            timeout_seconds: float,
+            *,
+            env: dict[str, str] | None = None,
         ) -> self_evaluate_module.CommandResult:
             if "plugin-eval" in " ".join(command) or "node" in command:
                 return self_evaluate_module.CommandResult(tuple(command), 0, report, "")
@@ -131,6 +141,7 @@ class SelfEvaluateTests(unittest.TestCase):
             result = self_evaluate_module.evaluate_candidate(
                 "candidate = False\n",
                 plugin_eval_command=["node", "plugin-eval.js"],
+                allow_candidate_execution=True,
             )
 
         self.assertFalse(result.valid)
@@ -144,36 +155,20 @@ class SelfEvaluateTests(unittest.TestCase):
             error_dir.mkdir(parents=True)
             (error_dir / "error.txt").write_text("CodexProposalTimeout\n")
 
-            self.assertTrue(
-                self_evaluate_module._all_proposals_failed(
-                    run_dir, seed="same", best="same"
-                )
-            )
-            self.assertFalse(
-                self_evaluate_module._all_proposals_failed(
-                    run_dir, seed="seed", best="changed"
-                )
-            )
+            self.assertTrue(self_evaluate_module._all_proposals_failed(run_dir, seed="same", best="same"))
+            self.assertFalse(self_evaluate_module._all_proposals_failed(run_dir, seed="seed", best="changed"))
             successful_dir = run_dir / "proposer" / "proposals" / "proposal-success"
             successful_dir.mkdir(parents=True)
-            self.assertFalse(
-                self_evaluate_module._all_proposals_failed(
-                    run_dir, seed="same", best="same"
-                )
-            )
+            self.assertFalse(self_evaluate_module._all_proposals_failed(run_dir, seed="same", best="same"))
 
     def test_main_fails_when_all_live_proposals_time_out(self) -> None:
         class TimeoutProposer:
             def __init__(self, run_dir: Path, **_kwargs: object) -> None:
                 error_dir = run_dir / "proposals" / "proposal-timeout"
                 error_dir.mkdir(parents=True)
-                (error_dir / "error.txt").write_text(
-                    "CodexProposalTimeout: exceeded 600s\n", encoding="utf-8"
-                )
+                (error_dir / "error.txt").write_text("CodexProposalTimeout: exceeded 600s\n", encoding="utf-8")
 
-        seed = (
-            self_evaluate_module.PLUGIN_ROOT / self_evaluate_module.TARGET_RELATIVE
-        ).read_text(encoding="utf-8")
+        seed = (self_evaluate_module.PLUGIN_ROOT / self_evaluate_module.TARGET_RELATIVE).read_text(encoding="utf-8")
         result = SimpleNamespace(
             best_candidate={self_evaluate_module.COMPONENT: seed},
             best_score=0.91,
@@ -220,8 +215,10 @@ class SelfEvaluateTests(unittest.TestCase):
                     return_value=self._result(["preflight"]),
                 ),
                 patch.object(
-                    self_evaluate_module, "evaluate_candidate", return_value=baseline
-                ),
+                    self_evaluate_module,
+                    "evaluate_candidate",
+                    return_value=baseline,
+                ) as evaluate_candidate_mock,
                 patch.object(proposer_module, "CodexAgentProposer", TimeoutProposer),
                 patch.dict(
                     sys.modules,
@@ -240,11 +237,16 @@ class SelfEvaluateTests(unittest.TestCase):
                         temp_dir,
                         "--plugin-eval-command",
                         "plugin-eval",
+                        "--allow-candidate-execution",
                     ]
                 )
 
         self.assertEqual(exit_code, 2)
         self.assertIn("All proposal attempts failed", stderr.getvalue())
+        self.assertEqual(evaluate_candidate_mock.call_count, 2)
+        self.assertTrue(
+            all(call.kwargs["allow_candidate_execution"] for call in evaluate_candidate_mock.call_args_list)
+        )
         config = captured["config"]
         self.assertEqual(config.kwargs["engine"], "gepa")
         self.assertEqual(config.kwargs["max_evals"], 6)
@@ -260,9 +262,7 @@ class SelfEvaluateTests(unittest.TestCase):
 
     def test_run_directory_must_be_external(self) -> None:
         with self.assertRaises(ValueError):
-            self_evaluate_module._validate_run_dir(
-                self_evaluate_module.REPO_ROOT / "runs"
-            )
+            self_evaluate_module._validate_run_dir(self_evaluate_module.REPO_ROOT / "runs")
 
 
 if __name__ == "__main__":

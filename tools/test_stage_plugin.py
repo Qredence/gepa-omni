@@ -14,11 +14,7 @@ class StagePluginTests(unittest.TestCase):
             output = Path(temp_dir) / CANONICAL_PLUGIN_NAME
             staged = stage(output)
 
-            manifest = json.loads(
-                (staged / ".codex-plugin" / "plugin.json").read_text(
-                    encoding="utf-8"
-                )
-            )
+            manifest = json.loads((staged / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["name"], CANONICAL_PLUGIN_NAME)
             self.assertTrue((staged / "skills").is_dir())
             self.assertTrue((staged / "LICENSE").is_file())
@@ -30,9 +26,7 @@ class StagePluginTests(unittest.TestCase):
             ):
                 self.assertFalse((staged / development_only).exists())
 
-            self.assertFalse(
-                any(path.name == ".DS_Store" for path in staged.rglob("*"))
-            )
+            self.assertFalse(any(path.name == ".DS_Store" for path in staged.rglob("*")))
 
     def test_stage_requires_canonical_external_output(self) -> None:
         with self.assertRaises(ValueError):
@@ -49,6 +43,16 @@ class StagePluginTests(unittest.TestCase):
             (output / "existing.txt").write_text("keep", encoding="utf-8")
             with self.assertRaises(ValueError):
                 stage(output)
+
+    def test_stage_omits_untracked_runtime_files(self) -> None:
+        marker = REPO_ROOT / "skills" / "gepa-omni-skill" / "scripts" / "untracked-runtime-marker.txt"
+        marker.write_text("must not ship", encoding="utf-8")
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                staged = stage(Path(temp_dir) / CANONICAL_PLUGIN_NAME)
+                self.assertFalse((staged / "skills" / "gepa-omni-skill" / "scripts" / marker.name).exists())
+        finally:
+            marker.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

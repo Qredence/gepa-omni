@@ -254,6 +254,25 @@ class OmniPipelineTests(unittest.TestCase):
                 config_cls=FakeConfig,
             )
 
+    def test_unsandboxed_and_in_checkout_runs_are_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "sandbox must be True"):
+            self._run_omni(sandbox=False)
+        with self.assertRaisesRegex(ValueError, "outside the development checkout"):
+            self._run_omni(run_dir=Path(__file__).resolve().parents[1] / "runs")
+
+        with self.assertRaisesRegex(ValueError, "outside the development checkout"):
+            omni_pipeline.run_optimization(
+                "seed",
+                task=self.task,
+                engine="best_of_n",
+                max_evals=12,
+                max_token_cost=None,
+                run_dir="/external/runs/standalone",
+                output_dir=Path(__file__).resolve().parents[1] / "outputs",
+                launcher=self.launcher,
+                config_cls=FakeConfig,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

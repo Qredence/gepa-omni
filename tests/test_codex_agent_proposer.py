@@ -104,6 +104,10 @@ class CodexAgentProposerTests(unittest.TestCase):
             )
         return result, holder["process"], proposer
 
+    def test_in_checkout_run_directory_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "outside the development checkout"):
+            CodexAgentProposer(Path(__file__).resolve().parents[1] / "runs")
+
     def test_valid_proposal_materializes_context_and_usage(self) -> None:
         result, process, proposer = self._call(
             {"new_texts": {"prompt": "be precise and concise"}, "summary": "tightened"}

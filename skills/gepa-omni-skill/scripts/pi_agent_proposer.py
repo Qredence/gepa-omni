@@ -19,6 +19,8 @@ from pathlib import Path
 from textwrap import dedent
 from typing import Any
 
+from runtime_guards import require_sandbox, validate_external_path
+
 try:
     from gepa.oa.agent_runner import PiAgentRunner as _PiAgentRunner
     from gepa.oa.sandbox import pi_sandbox_prefix as _pi_sandbox_prefix
@@ -156,12 +158,11 @@ class PiAgentProposer:
         pi_command: str = "pi",
         sandbox: bool = True,
     ) -> None:
+        require_sandbox(sandbox)
         timeout = float(timeout_seconds)
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("timeout_seconds must be a finite positive number")
-        self.run_dir = (
-            Path(run_dir).expanduser().resolve() if run_dir is not None else None
-        )
+        self.run_dir = validate_external_path(run_dir, label="run_dir") if run_dir is not None else None
         self.model = model
         self.timeout_seconds = timeout
         self.pi_command = pi_command
@@ -221,9 +222,7 @@ class PiAgentProposer:
 
     @staticmethod
     def _prompt(components: Sequence[str]) -> str:
-        return _PROMPT_TEMPLATE.format(
-            names=json.dumps(list(components), ensure_ascii=False)
-        )
+        return _PROMPT_TEMPLATE.format(names=json.dumps(list(components), ensure_ascii=False))
 
     def _materialize(
         self,
@@ -258,9 +257,7 @@ class PiAgentProposer:
     ) -> dict[str, str]:
         new_texts = payload.get("new_texts")
         if not isinstance(new_texts, Mapping):
-            raise PiProposalValidationError(
-                "response must contain an object `new_texts`", proposal_dir
-            )
+            raise PiProposalValidationError("response must contain an object `new_texts`", proposal_dir)
         expected = set(components)
         actual = set(new_texts)
         if actual != expected:
@@ -271,17 +268,13 @@ class PiAgentProposer:
             )
         invalid = [name for name in components if not isinstance(new_texts[name], str)]
         if invalid:
-            raise PiProposalValidationError(
-                f"new_texts values must be strings: {invalid}", proposal_dir
-            )
+            raise PiProposalValidationError(f"new_texts values must be strings: {invalid}", proposal_dir)
         return {name: new_texts[name] for name in components}
 
     def _record_usage(self, proposal_dir: Path, result: Any) -> None:
         usage = getattr(result, "usage", {}) or {}
         input_tokens = int(usage.get("input_tokens", usage.get("inputTokens", 0)) or 0)
-        output_tokens = int(
-            usage.get("output_tokens", usage.get("outputTokens", 0)) or 0
-        )
+        output_tokens = int(usage.get("output_tokens", usage.get("outputTokens", 0)) or 0)
         cost = float(getattr(result, "cost_usd", 0.0) or 0.0)
         with self._lock:
             self._total_tokens_in += input_tokens
@@ -297,9 +290,7 @@ class PiAgentProposer:
 
     @staticmethod
     def _write_error(proposal_dir: Path, error: Exception) -> None:
-        (proposal_dir / "error.txt").write_text(
-            f"{type(error).__name__}: {error}\n", encoding="utf-8"
-        )
+        (proposal_dir / "error.txt").write_text(f"{type(error).__name__}: {error}\n", encoding="utf-8")
 
     @staticmethod
     def _validate_inputs(
@@ -321,18 +312,12 @@ class PiAgentProposer:
     def _run(self, proposal_dir: Path, prompt: str) -> Any:
         runner = self._runner()
         try:
-            result = runner.run(
-                prompt, work_dir=proposal_dir, timeout_seconds=self.timeout_seconds
-            )
+            result = runner.run(prompt, work_dir=proposal_dir, timeout_seconds=self.timeout_seconds)
         finally:
             runner.close()
         _write_json(proposal_dir / "command.json", list(result.command))
-        (proposal_dir / "pi_stdout.jsonl").write_text(
-            result.stdout or "", encoding="utf-8"
-        )
-        (proposal_dir / "pi_stderr.log").write_text(
-            result.stderr or "", encoding="utf-8"
-        )
+        (proposal_dir / "pi_stdout.jsonl").write_text(result.stdout or "", encoding="utf-8")
+        (proposal_dir / "pi_stderr.log").write_text(result.stderr or "", encoding="utf-8")
         self._record_usage(proposal_dir, result)
         _write_json(
             proposal_dir / "result_meta.json",
@@ -346,9 +331,7 @@ class PiAgentProposer:
         )
         return result
 
-    def _parse_candidate_response(
-        self, result: Any, components: Sequence[str], proposal_dir: Path
-    ) -> dict[str, str]:
+    def _parse_candidate_response(self, result: Any, components: Sequence[str], proposal_dir: Path) -> dict[str, str]:
         if result.timed_out:
             raise PiProposalTimeout(
                 f"Pi proposer exceeded timeout of {self.timeout_seconds:g}s",
@@ -362,9 +345,7 @@ class PiAgentProposer:
         raw_response = "\n".join((result.stdout or "", result.final_text or ""))
         payload = _parse_response(raw_response)
         if payload is None:
-            raise PiProposalValidationError(
-                "Pi returned no structured `new_texts` object", proposal_dir
-            )
+            raise PiProposalValidationError("Pi returned no structured `new_texts` object", proposal_dir)
         _write_json(proposal_dir / "response.json", payload)
         return self._validate_response(payload, components, proposal_dir)
 
@@ -376,18 +357,14 @@ class PiAgentProposer:
         *,
         metadata: Mapping[str, Any] | None = None,
     ) -> dict[str, str]:
-        components = self._validate_inputs(
-            candidate, reflective_dataset, components_to_update
-        )
+        components = self._validate_inputs(candidate, reflective_dataset, components_to_update)
         if not components:
             return {}
 
         proposal_dir = self._allocate_proposal_dir()
         self.last_proposal_dir = proposal_dir
         try:
-            self._materialize(
-                proposal_dir, candidate, reflective_dataset, components, metadata
-            )
+            self._materialize(proposal_dir, candidate, reflective_dataset, components, metadata)
             prompt = self._prompt(components)
             _write_json(proposal_dir / "output_schema.json", self._schema(components))
             (proposal_dir / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")

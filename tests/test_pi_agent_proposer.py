@@ -83,6 +83,12 @@ class PiAgentProposerTests(unittest.TestCase):
     def _proposer(self) -> PiAgentProposer:
         return PiAgentProposer(self.run_dir, model="provider/model", sandbox=True, timeout_seconds=2)
 
+    def test_unsandboxed_or_in_checkout_runs_are_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "sandbox must be True"):
+            PiAgentProposer(self.run_dir, sandbox=False)
+        with self.assertRaisesRegex(ValueError, "outside the development checkout"):
+            PiAgentProposer(Path(__file__).resolve().parents[1] / "runs")
+
     def test_valid_response_and_prompt_contract(self) -> None:
         proposer = self._proposer()
         with patch.object(proposer_module, "_PiAgentRunner", FakePiRunner), patch.object(

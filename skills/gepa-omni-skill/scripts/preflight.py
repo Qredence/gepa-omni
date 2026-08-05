@@ -64,14 +64,8 @@ def _creds_for(lm: str) -> tuple[bool, str]:
     if lm.startswith("openai/") or lm.startswith("gpt-") or "gpt-5" in lm:
         return bool(os.environ.get("OPENAI_API_KEY")), "export OPENAI_API_KEY"
     if "claude" in lm or lm.startswith("anthropic/"):
-        return bool(os.environ.get("ANTHROPIC_API_KEY")) or has_aws, (
-            "export ANTHROPIC_API_KEY (or AWS creds)"
-        )
-    any_key = bool(
-        os.environ.get("OPENAI_API_KEY")
-        or os.environ.get("ANTHROPIC_API_KEY")
-        or has_aws
-    )
+        return bool(os.environ.get("ANTHROPIC_API_KEY")) or has_aws, ("export ANTHROPIC_API_KEY (or AWS creds)")
+    any_key = bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or has_aws)
     return any_key, "export your LiteLLM provider's API key"
 
 
@@ -98,13 +92,11 @@ def _check_gepa_import() -> tuple[bool, set[str]]:
         check(
             "engine registry exposes GEPA, best_of_n, autoresearch, and meta_harness",
             not missing,
-            "install the pinned maintained engine-capable `gepa[full]` fork; "
-            f"missing: {', '.join(missing)}",
+            f"install the pinned maintained engine-capable `gepa[full]` fork; missing: {', '.join(missing)}",
         )
         print(f"      engines -> {', '.join(sorted(available)) or '(none)'}")
         check(
-            "current launcher exposes composition helpers: "
-            + ", ".join(COMPOSITION_HELPERS),
+            "current launcher exposes composition helpers: " + ", ".join(COMPOSITION_HELPERS),
             True,
         )
         return True, available
@@ -112,8 +104,7 @@ def _check_gepa_import() -> tuple[bool, set[str]]:
         check(
             "import current optimize_anything API",
             False,
-            "install the pinned maintained engine-capable `gepa[full]` fork, with "
-            "OptimizeAnythingConfig",
+            "install the pinned maintained engine-capable `gepa[full]` fork, with OptimizeAnythingConfig",
         )
         print(f"      {exc}")
         return False, set()
@@ -134,9 +125,7 @@ def _check_agent_tools(
     pi_command: str = "pi",
     codex_command: str = "codex",
 ) -> None:
-    required = [
-        codex_command if backend == "codex" else pi_command if backend == "pi" else "claude"
-    ]
+    required = [codex_command if backend == "codex" else pi_command if backend == "pi" else "claude"]
     if engine in {"autoresearch", "meta_harness"}:
         required.extend(("jq", "curl"))
     for tool in required:
@@ -160,7 +149,7 @@ def _check_agent_tools(
             (
                 "install bubblewrap; Pi will not silently run unsandboxed"
                 if backend == "pi"
-                else "install bubblewrap, or explicitly configure sandbox=False"
+                else "install bubblewrap; unsandboxed agent execution is not supported"
             ),
         )
         if executable:
@@ -206,7 +195,6 @@ def _check_pi_surface(gepa_available: bool) -> None:
         )
         print(f"      {exc}")
 
-
     try:
         from pi_agent_proposer import PiAgentProposer
 
@@ -214,9 +202,7 @@ def _check_pi_surface(gepa_available: bool) -> None:
         call = inspect.signature(PiAgentProposer.__call__)
         check(
             "PiAgentProposer constructor contract",
-            {"run_dir", "model", "timeout_seconds", "pi_command", "sandbox"}.issubset(
-                constructor.parameters
-            ),
+            {"run_dir", "model", "timeout_seconds", "pi_command", "sandbox"}.issubset(constructor.parameters),
             "refresh the plugin Pi proposer script",
         )
         check(
@@ -289,9 +275,7 @@ def _check_codex_compatibility(gepa_available: bool, codex_command: str = "codex
         required_constructor = {"run_dir", "model", "timeout_seconds"}
         required_call = {"candidate", "reflective_dataset", "components_to_update"}
         constructor_ok = required_constructor.issubset(constructor.parameters)
-        call_ok = (
-            required_call.issubset(call.parameters) and "metadata" in call.parameters
-        )
+        call_ok = required_call.issubset(call.parameters) and "metadata" in call.parameters
         check(
             "CodexAgentProposer constructor contract",
             constructor_ok,
@@ -413,21 +397,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         default="gepa",
         choices=ENGINE_CHOICES,
     )
-    parser.add_argument(
-        "--test-lm", action="store_true", help="make an opt-in 1-call LM round-trip"
-    )
+    parser.add_argument("--test-lm", action="store_true", help="make an opt-in 1-call LM round-trip")
     parser.add_argument(
         "--agent-backend",
         choices=("codex", "pi", "claude"),
         default="codex",
         help="backend for autoresearch/meta_harness (default: codex)",
     )
-    parser.add_argument(
-        "--pi-command", default="pi", help="Pi executable used by the pi backend"
-    )
-    parser.add_argument(
-        "--codex-command", default="codex", help="Codex executable used by the codex backend"
-    )
+    parser.add_argument("--pi-command", default="pi", help="Pi executable used by the pi backend")
+    parser.add_argument("--codex-command", default="codex", help="Codex executable used by the codex backend")
     parser.add_argument(
         "--codex-input-cost-per-million",
         type=float,

@@ -21,6 +21,8 @@ from pathlib import Path
 from textwrap import dedent
 from typing import Any
 
+from runtime_guards import validate_external_path
+
 
 class CodexProposalError(Exception):
     """Base class for proposer failures with a retained proposal directory."""
@@ -153,9 +155,7 @@ def _parse_response(raw: str) -> dict[str, Any] | None:
 def _usage_from_value(value: Any) -> tuple[int, int]:
     """Best-effort token extraction from Codex JSONL events."""
     if isinstance(value, Mapping):
-        input_tokens = value.get(
-            "input_tokens", value.get("prompt_tokens", value.get("inputTokens", 0))
-        )
+        input_tokens = value.get("input_tokens", value.get("prompt_tokens", value.get("inputTokens", 0)))
         output_tokens = value.get(
             "output_tokens",
             value.get("completion_tokens", value.get("outputTokens", 0)),
@@ -246,9 +246,7 @@ class CodexAgentProposer:
         timeout = float(timeout_seconds)
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("timeout_seconds must be a finite positive number")
-        self.run_dir = (
-            Path(run_dir).expanduser().resolve() if run_dir is not None else None
-        )
+        self.run_dir = validate_external_path(run_dir, label="run_dir") if run_dir is not None else None
         self.model = model
         self.timeout_seconds = timeout
         self.last_proposal_dir: Path | None = None
@@ -322,9 +320,7 @@ class CodexAgentProposer:
         _write_json(proposal_dir / "components_to_update.json", list(components))
         _write_json(proposal_dir / "metadata.json", metadata or {})
 
-    def _command(
-        self, proposal_dir: Path, schema_path: Path, output_path: Path
-    ) -> list[str]:
+    def _command(self, proposal_dir: Path, schema_path: Path, output_path: Path) -> list[str]:
         codex = shutil.which("codex")
         if not codex:
             raise CodexProcessError("`codex` CLI was not found on PATH", proposal_dir)
@@ -364,24 +360,19 @@ class CodexAgentProposer:
     ) -> dict[str, str]:
         new_texts = payload.get("new_texts")
         if not isinstance(new_texts, Mapping):
-            raise ProposalValidationError(
-                "response must contain an object `new_texts`", proposal_dir
-            )
+            raise ProposalValidationError("response must contain an object `new_texts`", proposal_dir)
         expected = set(components)
         actual = set(new_texts)
         if actual != expected:
             missing = sorted(expected - actual)
             extra = sorted(actual - expected)
             raise ProposalValidationError(
-                "new_texts keys do not match requested components; "
-                f"missing={missing}, extra={extra}",
+                f"new_texts keys do not match requested components; missing={missing}, extra={extra}",
                 proposal_dir,
             )
         invalid = [name for name in components if not isinstance(new_texts[name], str)]
         if invalid:
-            raise ProposalValidationError(
-                f"new_texts values must be strings: {invalid}", proposal_dir
-            )
+            raise ProposalValidationError(f"new_texts values must be strings: {invalid}", proposal_dir)
         return {name: new_texts[name] for name in components}
 
     def _prepare_proposal(
@@ -392,9 +383,7 @@ class CodexAgentProposer:
         components: Sequence[str],
         metadata: Mapping[str, Any] | None,
     ) -> tuple[Path, str, list[str]]:
-        self._materialize(
-            proposal_dir, candidate, reflective_dataset, components, metadata
-        )
+        self._materialize(proposal_dir, candidate, reflective_dataset, components, metadata)
         schema_path = proposal_dir / "output_schema.json"
         output_path = proposal_dir / "codex_result.json"
         _write_json(schema_path, self._schema(components))
@@ -417,17 +406,13 @@ class CodexAgentProposer:
                 start_new_session=(os.name == "posix"),
             )
         except OSError as exc:
-            raise CodexProcessError(
-                f"failed to start codex: {exc}", proposal_dir
-            ) from exc
+            raise CodexProcessError(f"failed to start codex: {exc}", proposal_dir) from exc
 
     def _write_process_logs(self, proposal_dir: Path, stdout: str, stderr: str) -> None:
         (proposal_dir / "codex_stdout.jsonl").write_text(stdout, encoding="utf-8")
         (proposal_dir / "codex_stderr.log").write_text(stderr, encoding="utf-8")
 
-    def _run_process(
-        self, command: list[str], prompt: str, proposal_dir: Path
-    ) -> tuple[str, str, int]:
+    def _run_process(self, command: list[str], prompt: str, proposal_dir: Path) -> tuple[str, str, int]:
         process = self._start_process(command, proposal_dir)
         try:
             stdout, stderr = process.communicate(prompt, timeout=self.timeout_seconds)
@@ -480,9 +465,7 @@ class CodexAgentProposer:
 
     @staticmethod
     def _write_error(proposal_dir: Path, error: Exception) -> None:
-        (proposal_dir / "error.txt").write_text(
-            f"{type(error).__name__}: {error}\n", encoding="utf-8"
-        )
+        (proposal_dir / "error.txt").write_text(f"{type(error).__name__}: {error}\n", encoding="utf-8")
 
     def __call__(
         self,
@@ -510,18 +493,14 @@ class CodexAgentProposer:
             output_path, prompt, command = self._prepare_proposal(
                 proposal_dir, candidate, reflective_dataset, components, metadata
             )
-            stdout, stderr, returncode = self._run_process(
-                command, prompt, proposal_dir
-            )
+            stdout, stderr, returncode = self._run_process(command, prompt, proposal_dir)
             self._record_usage(proposal_dir, stdout)
             if returncode:
                 raise CodexProcessError(
                     f"codex exited with status {returncode}; stderr={stderr[-500:]!r}",
                     proposal_dir,
                 )
-            return self._parse_candidate_response(
-                output_path, stdout, components, proposal_dir
-            )
+            return self._parse_candidate_response(output_path, stdout, components, proposal_dir)
         except CodexProposalError as exc:
             self._write_error(proposal_dir, exc)
             raise

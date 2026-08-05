@@ -29,8 +29,6 @@
       "Read"
     ],
     "websiteURL": "https://github.com/Qredence/fleet-gepa-omni",
-    "privacyPolicyURL": "https://gepa-ai.github.io/gepa/",
-    "termsOfServiceURL": "https://gepa-ai.github.io/gepa/",
     "defaultPrompt": [
       "Optimize this candidate against my evaluator with Omni",
       "Help me write a feedback-rich GEPA evaluator",

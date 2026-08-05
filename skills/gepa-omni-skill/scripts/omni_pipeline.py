@@ -14,6 +14,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from runtime_guards import require_sandbox, validate_external_path
+
 EXPLORATION_ENGINES = ("gepa", "autoresearch", "meta_harness")
 STANDALONE_ENGINES = (*EXPLORATION_ENGINES, "best_of_n")
 DEFAULT_CONTINUATION_ENGINE = "gepa"
@@ -38,9 +40,7 @@ def _validate_budget(max_evals: int | None, max_token_cost: float | None) -> Non
             "Omni requires an explicit max_evals or max_token_cost budget; "
             "use a standalone engine for an unbounded run."
         )
-    if max_evals is not None and (
-        isinstance(max_evals, bool) or not isinstance(max_evals, int) or max_evals <= 0
-    ):
+    if max_evals is not None and (isinstance(max_evals, bool) or not isinstance(max_evals, int) or max_evals <= 0):
         raise OmniBudgetError("max_evals must be a positive integer")
     if max_token_cost is not None and (
         isinstance(max_token_cost, bool)
@@ -70,15 +70,12 @@ def _split_tokens(total: float | None) -> tuple[float | None, ...]:
     return (slice_cost, slice_cost, slice_cost, slice_cost)
 
 
-def partition_budget(
-    max_evals: int | None, max_token_cost: float | None
-) -> tuple[BudgetSlice, ...]:
+def partition_budget(max_evals: int | None, max_token_cost: float | None) -> tuple[BudgetSlice, ...]:
     """Partition one total budget into three exploration and one continuation slice."""
 
     _validate_budget(max_evals, max_token_cost)
     return tuple(
-        BudgetSlice(evals, tokens)
-        for evals, tokens in zip(_split_evals(max_evals), _split_tokens(max_token_cost))
+        BudgetSlice(evals, tokens) for evals, tokens in zip(_split_evals(max_evals), _split_tokens(max_token_cost))
     )
 
 
@@ -92,10 +89,7 @@ def _load_launcher(launcher: Any | None, config_cls: Callable[..., Any] | None) 
         if config_cls is None:
             config_cls = getattr(launcher, "OptimizeAnythingConfig", None)
         if config_cls is None:
-            raise TypeError(
-                "config_cls is required when launcher does not expose "
-                "OptimizeAnythingConfig"
-            )
+            raise TypeError("config_cls is required when launcher does not expose OptimizeAnythingConfig")
         return launcher, config_cls
     from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything, optimize_best_of
 
@@ -138,10 +132,7 @@ def _engine_config(
     codex_proposer_factory: Callable[..., Any] | None,
 ) -> dict[str, Any]:
     if agent_backend not in AGENT_BACKENDS:
-        raise ValueError(
-            f"unsupported agent_backend {agent_backend!r}; choose "
-            + ", ".join(AGENT_BACKENDS)
-        )
+        raise ValueError(f"unsupported agent_backend {agent_backend!r}; choose " + ", ".join(AGENT_BACKENDS))
     if engine == "gepa":
         proposer = _make_codex_proposer(
             run_dir / "proposer",
@@ -302,17 +293,15 @@ def run_omni(
 ) -> Any:
     """Run Phase 1 exploration followed by a fresh Phase 2 continuation."""
 
+    require_sandbox(sandbox)
     if not isinstance(seed_candidate, str):
         raise TypeError("seed_candidate must be a string")
     if continuation_engine not in EXPLORATION_ENGINES:
-        raise ValueError(
-            "continuation_engine must be one of: "
-            + ", ".join(EXPLORATION_ENGINES)
-        )
+        raise ValueError("continuation_engine must be one of: " + ", ".join(EXPLORATION_ENGINES))
     slices = partition_budget(max_evals, max_token_cost)
     launcher, config_cls = _load_launcher(launcher, config_cls)
-    root = Path(run_dir)
-    output_root = Path(output_dir)
+    root = validate_external_path(run_dir, label="run_dir")
+    output_root = validate_external_path(output_dir, label="output_dir")
     exploration_configs = [
         _make_config(
             config_cls,
@@ -398,6 +387,7 @@ def run_optimization(
 ) -> Any:
     """Run default Omni orchestration or one explicitly selected engine."""
 
+    require_sandbox(sandbox)
     if not isinstance(seed_candidate, str):
         raise TypeError("seed_candidate must be a string")
     if engine is None:
@@ -426,18 +416,19 @@ def run_optimization(
         )
     if engine not in STANDALONE_ENGINES:
         raise ValueError(
-            f"unsupported standalone engine {engine!r}; omit engine for Omni or use "
-            + ", ".join(STANDALONE_ENGINES)
+            f"unsupported standalone engine {engine!r}; omit engine for Omni or use " + ", ".join(STANDALONE_ENGINES)
         )
     launcher, config_cls = _load_launcher(launcher, config_cls)
     budget = _full_budget(max_evals, max_token_cost)
-    stage_dir = Path(run_dir) / "standalone" / engine
+    root = validate_external_path(run_dir, label="run_dir")
+    output_root = validate_external_path(output_dir, label="output_dir")
+    stage_dir = root / "standalone" / engine
     config = _make_config(
         config_cls,
         engine,
         budget,
         run_dir=stage_dir,
-        output_dir=Path(output_dir) / "standalone" / engine,
+        output_dir=output_root / "standalone" / engine,
         stop_at_score=stop_at_score,
         max_concurrency=max_concurrency,
         sandbox=sandbox,

@@ -30,9 +30,7 @@ result = optimize_anything(
         output_dir="external-runs/my-gepa-run/output",
         engine_config={
             "engine": EngineConfig(),
-            "reflection": ReflectionConfig(
-                reflection_lm="anthropic/claude-sonnet-4-6"
-            ),
+            "reflection": ReflectionConfig(reflection_lm="anthropic/claude-sonnet-4-6"),
             "tracking": TrackingConfig(
                 use_wandb=True,
                 wandb_init_kwargs={
