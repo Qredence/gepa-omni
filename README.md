@@ -13,6 +13,15 @@ individually for comparison and debugging.
 > intentional: the former identifies the GitHub repository; the latter two are
 > the package and skill identities consumed by Codex.
 
+## Quickstart
+
+Add this repository as a Codex plugin marketplace, then install GEPA Omni:
+
+```bash
+codex plugin marketplace add Qredence/gepa-omni
+codex plugin add gepa-omni@gepa-omni
+```
+
 ## How the workflow works
 
 The default workflow shares one seed, evaluator, objective, and selection data
