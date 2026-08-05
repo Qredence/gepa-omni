@@ -2,8 +2,8 @@
 
 The public entry point is `gepa.optimize_anything.optimize_anything`. This
 reference follows upstream `main` at
-`ba30ee24e8f63dfdb9e557ed8cfaaec7aa09a6df` while documenting the Codex/Pi
-adapters supplied by this plugin.
+`ba30ee24e8f63dfdb9e557ed8cfaaec7aa09a6df` while documenting the maintained
+fork's Codex/Pi adapters supplied by this plugin.
 
 ## Mental model
 
@@ -159,8 +159,8 @@ entire `engine_config` block with keys for that engine.
 | engine | proposal strategy | runtime |
 | --- | --- | --- |
 | `gepa` | Reflect on evaluator feedback, mutate candidates, and keep a Pareto frontier. | In-process; use a reflection LM or a custom proposer. |
-| `autoresearch` | Run a long-horizon experiment loop in a candidate workspace. | Claude upstream; Pi in the local Claude-free profile. |
-| `meta_harness` | Propose candidates from frontier/history while the framework evaluates them. | Claude upstream; Pi in the local Claude-free profile. |
+| `autoresearch` | Run a long-horizon experiment loop in a candidate workspace. | Codex by default in the plugin; Pi/Claude are explicit alternatives. |
+| `meta_harness` | Propose candidates from frontier/history while the framework evaluates them. | Codex by default in the plugin; Pi/Claude are explicit alternatives. |
 | `best_of_n` | Independently sample candidates and keep the best. | Baseline; no feedback or history. |
 
 Composition helpers include `optimize_sequential`, `optimize_parallel`,
@@ -184,8 +184,8 @@ explore = optimize_best_of(
     objective=objective,
     configs=[
         gepa_config,             # CodexAgentProposer locally
-        autoresearch_pi_config,  # agent_backend="pi"
-        meta_harness_pi_config,  # agent_backend="pi"
+        autoresearch_codex_config,  # agent_backend="codex"
+        meta_harness_codex_config,  # agent_backend="codex"
     ],
 )
 
@@ -217,7 +217,8 @@ standalone engine instead.
 The default continuation is fresh `engine="gepa"` with the Codex proposer
 (“Omni-GEPA”). `continuation_engine="autoresearch"` and
 `continuation_engine="meta_harness"` are explicit alternatives using the
-local Pi backend. An explicit standalone `engine="gepa"`,
+local Codex backend by default. Pass `agent_backend="pi"` or
+`agent_backend="claude"` for an explicit alternative. An explicit standalone `engine="gepa"`,
 `"autoresearch"`, `"meta_harness"`, or `"best_of_n"` bypasses this
 orchestration and receives the full supplied budget. The local implementation
 is the internal `scripts/omni_pipeline.py` helper; the public launcher remains
@@ -283,9 +284,61 @@ returned key must exactly match `components_to_update`; every returned value
 must be a string. See `codex.md` for the read-only flags, timeout, and
 diagnostic files.
 
+## Codex-backed agent engines
+
+The plugin's Omni default uses the maintained fork's writable Codex runner for
+both agent engines. GEPA itself continues to use the separate read-only
+`CodexAgentProposer`.
+
+```python
+codex_agent_settings = {
+    "agent_backend": "codex",
+    "codex_command": "codex",
+    "model": "gpt-5-codex",  # omit to use the authenticated CLI default
+    "codex_input_cost_per_million": 2.0,
+    "codex_output_cost_per_million": 8.0,
+}
+
+autoresearch = OptimizeAnythingConfig(
+    engine="autoresearch",
+    max_evals=100,
+    max_token_cost=5.0,
+    sandbox=True,
+    engine_config={**codex_agent_settings, "ralph": True, "max_no_eval_seconds": 300},
+)
+
+meta_harness = OptimizeAnythingConfig(
+    engine="meta_harness",
+    max_evals=100,
+    max_token_cost=5.0,
+    sandbox=True,
+    engine_config={
+        **codex_agent_settings,
+        "max_iterations": 20,
+        "max_candidates_per_iter": 3,
+        "timeout_seconds": 600,
+    },
+)
+```
+
+AutoResearch launches one non-ephemeral session, retains its thread id, and
+uses `codex exec resume <thread_id>` for Ralph continuations. Meta-Harness
+starts a fresh ephemeral session per iteration while retaining its shared
+frontier/workspace. Each iteration retains command, thread id, stdout, stderr,
+usage, completion state, and cost estimate under the external run directory.
+
+Codex maps `sandbox=True` to `--sandbox workspace-write` and explicitly enables
+workspace-write network access so the local `eval.sh` server is reachable; it
+rejects `sandbox=False` and never silently escalates to unrestricted host
+access. The workspace is the engine's external temporary/run directory, never
+the repository checkout. If `max_token_cost` is set, both pricing rates are
+required and validated before launch. Without a USD cap, usage-only runs are
+allowed and cost is marked unknown when rates are absent rather than reported
+as a false zero.
+
 ## Pi-backed agent engines
 
-The local Claude-free profile uses the maintained fork's generic Pi runner:
+Pi remains an explicit alternative using the maintained fork's generic runner:
 
 ```python
 OptimizeAnythingConfig(
@@ -317,9 +370,11 @@ component proposer contract as `CodexAgentProposer`.
 
 ## Other backend configuration
 
-`autoresearch` accepts `model`, `ralph`, `max_no_eval_seconds`, `handoffs`,
-and agent-specific effort/thinking settings. `meta_harness` accepts `model`,
-`max_iterations`, `max_candidates_per_iter`, and its agent-specific settings.
+`autoresearch` accepts `agent_backend`, `model`, `pi_command` or
+`codex_command`, Codex pricing rates, `ralph`, `max_no_eval_seconds`,
+`handoffs`, and agent-specific effort/thinking settings. `meta_harness` accepts
+the corresponding backend/command/pricing keys, `max_iterations`,
+`max_candidates_per_iter`, `timeout_seconds`, and its agent-specific settings.
 `best_of_n` accepts `model`, `temperature`, `max_n`, `lm_kwargs`, and optional
 effort/thinking settings. Use only keys supported by the selected backend.
 
@@ -383,9 +438,12 @@ Use the plugin's extended preflight before a real run:
 ```bash
 python3 skills/gepa-omni-skill/scripts/preflight.py --engine gepa
 python3 skills/gepa-omni-skill/scripts/preflight.py --engine codex
+python3 skills/gepa-omni-skill/scripts/preflight.py --engine omni
 python3 skills/gepa-omni-skill/scripts/preflight.py --engine omni --agent-backend pi
 ```
 
 It checks the current launcher, engine registry, composition helpers, the
-selected Codex/Pi proposer surface, credentials, and OS sandbox prerequisites.
-It does not make model calls unless `--test-lm` is explicitly requested.
+selected Codex/Pi proposer and fork-runner surface, credentials, and the
+relevant sandbox prerequisites. For Codex, pass both pricing rates whenever a
+token cap is configured. It does not make model calls unless `--test-lm` is
+explicitly requested.

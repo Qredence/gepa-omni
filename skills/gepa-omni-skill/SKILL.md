@@ -81,8 +81,8 @@ For a normal “optimize this” request, use the two-phase Omni workflow in
 1. Define one shared candidate, evaluator, objective, dataset/valset, and explicit total
    budget.
 2. Run `gepa`, `autoresearch`, and `meta_harness` through `optimize_best_of` in parallel.
-   The local runtime uses `CodexAgentProposer` for GEPA and `agent_backend="pi"` for both
-   agentic branches.
+   The local runtime uses the read-only `CodexAgentProposer` for GEPA and
+   `agent_backend="codex"` for both writable agentic branches by default.
 3. Select `explore.best_candidate`, then start a fresh continuation optimizer in a new
    run/output directory. Fresh GEPA is the default continuation (“Omni-GEPA”); set
    `continuation_engine` explicitly only when an AutoResearch or Meta-Harness continuation
@@ -146,10 +146,11 @@ configuration is strict: keys belong to the selected backend, and swapping
   Codex-native local adapter is `CodexAgentProposer`; `PiAgentProposer` is also
   available for the component-level hook.
 - `autoresearch` runs a long-horizon experiment loop. The maintained local profile
-  uses `agent_backend="pi"` and one persistent Pi RPC session for Ralph continuations.
+  defaults to `agent_backend="codex"` and resumes one Codex thread for Ralph
+  continuations; `pi` and `claude` remain explicit alternatives.
 - `meta_harness` proposes candidates while the outer framework evaluates and selects
-  them. The Pi profile starts a fresh session per iteration while the frontier workspace
-  persists.
+  them. The default Codex profile starts a fresh ephemeral session per iteration
+  while the frontier workspace persists; `pi` and `claude` remain explicit alternatives.
 - `best_of_n` samples independent candidates and retains the best. It ignores feedback
   and history, so use it as a comparison floor.
 
@@ -167,20 +168,31 @@ structured `new_texts` whose keys exactly match `components_to_update` and whose
 are strings. Per-proposal inputs, output, usage, stderr, and errors remain available for
 diagnosis.
 
-Follow `references/pi.md` for `PiAgentProposer` and the Pi-backed agent engines. Pi's
-tool allowlist is not an OS security boundary: `sandbox=True` requires `bwrap` on Linux
-or `sandbox-exec` on macOS, and there is no silent unsandboxed fallback.
+Follow `references/codex.md` for the read-only GEPA proposer and the writable
+Codex-backed agent engines. Codex always uses `--sandbox workspace-write` against
+the engine's external workspace and explicitly enables workspace-write network
+access so `eval.sh` can reach the local evaluation server; `sandbox=False` is
+rejected and never escalates to unrestricted access. When `max_token_cost` is set for Codex, provide both
+explicit input and output USD-per-million-token rates. Without a USD cap, token
+usage is retained and cost is marked unknown when rates are absent.
+
+Follow `references/pi.md` for `PiAgentProposer` and the explicit Pi-backed agent
+alternative. Pi's tool allowlist is not an OS security boundary: `sandbox=True`
+requires `bwrap` on Linux or `sandbox-exec` on macOS, and there is no silent
+unsandboxed fallback.
 
 Run the extended local preflight before a real run:
 
 ```bash
 python3 skills/gepa-omni-skill/scripts/preflight.py --engine gepa
 python3 skills/gepa-omni-skill/scripts/preflight.py --engine codex
+python3 skills/gepa-omni-skill/scripts/preflight.py --engine omni
 python3 skills/gepa-omni-skill/scripts/preflight.py --engine omni --agent-backend pi
 ```
 
-The plugin deliberately keeps the upstream Claude-free substitutions in the local
-runtime layer; it does not add a Claude CLI requirement to the Codex/Pi distribution.
+The plugin keeps backend selection in the local runtime layer: Codex is the
+default for the writable agent engines, while Pi and Claude are explicit
+alternatives. The read-only GEPA proposer remains Codex-native.
 
 ## Local setup and references
 
@@ -198,7 +210,7 @@ and linting.
 - `references/gotchas.md` — reward hacking, selection bias, saturated signals, stop
   conditions, and runtime prerequisites.
 - `references/codex.md` — Codex proposer contract, isolation, diagnostics, and limits.
-- `references/pi.md` — Pi proposer and Claude-free agent-engine behavior.
+- `references/pi.md` — Pi proposer and explicit Pi agent-engine behavior.
 - `references/tracking.md` — optional W&B/MLflow tracking.
 
 The semantic comparison baseline is upstream `main` at
