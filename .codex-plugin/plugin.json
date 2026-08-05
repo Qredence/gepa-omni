@@ -4,10 +4,10 @@
   "description": "Optimize scorable prompts, code, configs, schemas, SQL, regexes, and agent instructions with GEPA's Omni portfolio and fresh continuation workflow.",
   "author": {
     "name": "GEPA",
-    "url": "https://github.com/Qredence/fleet-gepa-omni"
+    "url": "https://github.com/Qredence/gepa-omni"
   },
   "homepage": "https://gepa-ai.github.io/gepa/",
-  "repository": "https://github.com/Qredence/fleet-gepa-omni",
+  "repository": "https://github.com/Qredence/gepa-omni",
   "license": "MIT",
   "keywords": [
     "gepa",
@@ -28,7 +28,7 @@
       "Interactive",
       "Read"
     ],
-    "websiteURL": "https://github.com/Qredence/fleet-gepa-omni",
+    "websiteURL": "https://github.com/Qredence/gepa-omni",
     "defaultPrompt": [
       "Optimize this candidate against my evaluator with Omni",
       "Help me write a feedback-rich GEPA evaluator",

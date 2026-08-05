@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please use GitHub's private vulnerability reporting for
-[Qredence/fleet-gepa-omni](https://github.com/Qredence/fleet-gepa-omni/security/advisories/new).
+[Qredence/gepa-omni](https://github.com/Qredence/gepa-omni/security/advisories/new).
 Do not disclose suspected vulnerabilities in a public issue until they have
 been assessed.
 
