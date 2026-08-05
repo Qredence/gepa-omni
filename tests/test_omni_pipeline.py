@@ -12,10 +12,15 @@ SCRIPT_DIR = (
     / "gepa-omni-skill"
     / "scripts"
 )
-sys.path.insert(0, str(SCRIPT_DIR))
-
-import omni_pipeline  # noqa: E402
-
+_SCRIPT_DIR_STR = str(SCRIPT_DIR)
+sys.path.insert(0, _SCRIPT_DIR_STR)
+try:
+    import omni_pipeline  # noqa: E402
+finally:
+    if sys.path and sys.path[0] == _SCRIPT_DIR_STR:
+        sys.path.pop(0)
+    elif _SCRIPT_DIR_STR in sys.path:
+        sys.path.remove(_SCRIPT_DIR_STR)
 
 class FakeConfig:
     def __init__(self, **kwargs: object) -> None:
