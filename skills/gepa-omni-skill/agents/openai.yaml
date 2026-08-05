@@ -1,6 +1,6 @@
 interface:
   display_name: "GEPA Omni Skill"
   short_description: "Optimize prompts and code with GEPA"
-  default_prompt: "Use $gepa-omni-skill to optimize this candidate against my evaluator and choose the best engine."
+  default_prompt: "Use $gepa-omni-skill to optimize this candidate against my evaluator with the default Omni portfolio and fresh continuation."
 policy:
   allow_implicit_invocation: true

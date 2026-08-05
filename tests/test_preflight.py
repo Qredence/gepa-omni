@@ -257,9 +257,9 @@ class PreflightTests(unittest.TestCase):
             encoding="utf-8"
         )
         for expected in (
-            'OptimizeAnythingConfig(engine="gepa"',
+            'engine="gepa"',
             'engine="autoresearch"',
-            'engine="meta_harness"',
+            '`meta_harness`',
             "optimize_best_of",
             "optimize_adaptive_sequential",
         ):
