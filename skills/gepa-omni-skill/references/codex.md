@@ -32,6 +32,12 @@ directories retain inputs, schema, output, response, usage, and errors.
 
 ## Configure through the current launcher
 
+The public `optimize_anything` launcher is string-candidate-first. The
+component mapping in the example is the local compatibility boundary for the
+pinned fork's custom-proposer hook: it gives `CodexAgentProposer` one named
+component so the GEPA proposer contract can return `dict[str, str]`. Do not
+use that mapping as the general launcher contract or when comparing engines.
+
 ```python
 from codex_agent_proposer import CodexAgentProposer
 from gepa.optimize_anything import (
@@ -56,6 +62,7 @@ result = optimize_anything(
     config=OptimizeAnythingConfig(
         engine="gepa",
         max_evals=300,
+        stop_at_score=1.0,
         run_dir="external-runs/my-gepa-run/gepa",
         output_dir="external-runs/my-gepa-run/output",
         engine_config={

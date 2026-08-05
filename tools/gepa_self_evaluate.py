@@ -447,6 +447,9 @@ def main(argv: list[str] | None = None) -> int:
         return record.score, record.info
 
     try:
+        # The public optimize_anything contract is string-candidate-first. This
+        # development-only harness uses one named component because the pinned
+        # fork's custom-proposer bridge requires a mapping for Codex proposals.
         result = optimize_anything(
             seed_candidate={COMPONENT: seed},
             evaluator=evaluate,
@@ -460,6 +463,7 @@ def main(argv: list[str] | None = None) -> int:
             config=OptimizeAnythingConfig(
                 engine="gepa",
                 max_evals=args.max_metric_calls,
+                stop_at_score=1.0,
                 max_concurrency=1,
                 run_dir=str(run_dir / "gepa"),
                 output_dir=str(run_dir / "gepa-output"),

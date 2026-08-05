@@ -248,7 +248,14 @@ class SelfEvaluateTests(unittest.TestCase):
         config = captured["config"]
         self.assertEqual(config.kwargs["engine"], "gepa")
         self.assertEqual(config.kwargs["max_evals"], 6)
+        self.assertEqual(config.kwargs["stop_at_score"], 1.0)
         self.assertIn("reflection", config.kwargs["engine_config"])
+        self.assertEqual(
+            captured["seed_candidate"],
+            {self_evaluate_module.COMPONENT: seed},
+        )
+        self.assertEqual(captured["dataset"], [{"phase": "training"}])
+        self.assertEqual(captured["valset"], [{"phase": "validation"}])
         self.assertEqual(captured["test_set"], [{"phase": "held-out"}])
 
     def test_run_directory_must_be_external(self) -> None:
