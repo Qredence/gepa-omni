@@ -1,10 +1,10 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "gepa-omni",
-  "version": "0.1.0+codex.20260803175918",
+  "version": "0.2.0",
   "description": "Optimize scorable prompts, code, configs, schemas, SQL, regexes, and agent instructions with GEPA's Omni portfolio and fresh continuation workflow.",
   "author": {
-    "name": "GEPA",
+    "name": "Qredence",
     "url": "https://github.com/Qredence/gepa-omni"
   },
   "homepage": "https://github.com/Qredence/gepa-omni",

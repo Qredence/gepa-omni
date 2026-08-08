@@ -1,6 +1,6 @@
 {
   "name": "gepa-omni",
-  "version": "0.1.0+codex.20260803175918",
+  "version": "0.2.0",
   "description": "Optimize scorable prompts, code, configs, schemas, SQL, regexes, and agent instructions with GEPA's Omni portfolio and fresh continuation workflow.",
   "author": {
     "name": "Zachary BENSALEM",
@@ -22,7 +22,7 @@
     "displayName": "GEPA Omni",
     "shortDescription": "Optimize scorable text with GEPA",
     "longDescription": "Use GEPA Omni's parallel GEPA, AutoResearch, and Meta-Harness exploration followed by a fresh continuation to improve prompts, code, configurations, schemas, SQL, regexes, and agent instructions from evaluator feedback. Explicit standalone engines remain available for comparison. GEPA uses a read-only Codex proposer, while AutoResearch and Meta-Harness default to writable Codex workspace sessions with explicit Pi and Claude alternatives.",
-    "developerName": "GEPA",
+    "developerName": "Qredence",
     "category": "Developer Tools",
     "capabilities": [
       "Interactive",
