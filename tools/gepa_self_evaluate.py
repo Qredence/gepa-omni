@@ -292,7 +292,7 @@ def evaluate_candidate(
 
     with tempfile.TemporaryDirectory(prefix="gepa-self-eval-") as temp_dir:
         fixture = Path(temp_dir) / STAGED_PLUGIN_NAME
-        stage(fixture)
+        stage(fixture, package_format="codex")
         test_path = fixture / TEST_RELATIVE
         test_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(PLUGIN_ROOT / TEST_RELATIVE, test_path)

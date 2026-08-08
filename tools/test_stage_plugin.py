@@ -9,15 +9,17 @@ from stage_plugin import CANONICAL_PLUGIN_NAME, REPO_ROOT, stage
 
 
 class StagePluginTests(unittest.TestCase):
-    def test_stage_contains_only_runtime_payload(self) -> None:
+    def test_portable_stage_contains_only_runtime_payload(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / CANONICAL_PLUGIN_NAME
             staged = stage(output)
 
-            manifest = json.loads((staged / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+            manifest = json.loads((staged / "plugin.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["name"], CANONICAL_PLUGIN_NAME)
+            self.assertTrue((staged / "plugin.json").is_file())
             self.assertTrue((staged / "skills").is_dir())
             self.assertTrue((staged / "LICENSE").is_file())
+            self.assertFalse((staged / ".codex-plugin").exists())
             for development_only in (
                 "tests",
                 "tools",
@@ -27,6 +29,23 @@ class StagePluginTests(unittest.TestCase):
                 self.assertFalse((staged / development_only).exists())
 
             self.assertFalse(any(path.name == ".DS_Store" for path in staged.rglob("*")))
+
+    def test_codex_stage_contains_legacy_runtime_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / CANONICAL_PLUGIN_NAME
+            staged = stage(output, package_format="codex")
+
+            manifest = json.loads((staged / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["name"], CANONICAL_PLUGIN_NAME)
+            self.assertTrue((staged / ".codex-plugin").is_dir())
+            self.assertTrue((staged / "skills").is_dir())
+            self.assertTrue((staged / "LICENSE").is_file())
+            self.assertFalse((staged / "plugin.json").exists())
+
+    def test_stage_rejects_unknown_package_format(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(ValueError, "unsupported package format"):
+                stage(Path(temp_dir) / CANONICAL_PLUGIN_NAME, package_format="unknown")
 
     def test_stage_requires_canonical_external_output(self) -> None:
         with self.assertRaises(ValueError):

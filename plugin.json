@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "gepa-omni",
+  "version": "0.1.0+codex.20260803175918",
+  "description": "Optimize scorable prompts, code, configs, schemas, SQL, regexes, and agent instructions with GEPA's Omni portfolio and fresh continuation workflow.",
+  "author": {
+    "name": "GEPA",
+    "url": "https://github.com/Qredence/gepa-omni"
+  },
+  "homepage": "https://gepa-ai.github.io/gepa/",
+  "repository": "https://github.com/Qredence/gepa-omni",
+  "license": "MIT",
+  "keywords": [
+    "gepa",
+    "optimization",
+    "prompt-optimization",
+    "optimize-anything",
+    "agent-skill",
+    "dspy"
+  ]
+}

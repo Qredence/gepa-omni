@@ -1,8 +1,10 @@
 # GEPA Omni
 
-GEPA Omni is a Codex plugin for improving scorable text artifacts—prompts,
-programs, configurations, schemas, SQL, regular expressions, plans, and agent
-instructions—with evaluator-driven search from [GEPA](https://github.com/gepa-ai/gepa).
+GEPA Omni is an Agent Plugins 1.0 package for improving scorable text
+artifacts—prompts, programs, configurations, schemas, SQL, regular expressions,
+plans, and agent instructions—with evaluator-driven search from
+[GEPA](https://github.com/gepa-ai/gepa). The repository also retains an
+OpenAI/Codex compatibility export for clients that use `.codex-plugin`.
 
 The plugin combines three exploratory engines with a fresh continuation run:
 GEPA reflection, AutoResearch, and Meta-Harness. It also exposes each engine
@@ -11,11 +13,22 @@ individually for comparison and debugging.
 > The repository slug is `fleet-gepa-omni`, while the installable plugin ID is
 > `gepa-omni` and the shipped skill ID is `gepa-omni-skill`. This distinction is
 > intentional: the former identifies the GitHub repository; the latter two are
-> the package and skill identities consumed by Codex.
+> the package and skill identities consumed by agent clients.
 
 ## Quickstart
 
-Add this repository as a Codex plugin marketplace, then install GEPA Omni:
+For a portable Agent Plugins package, stage the runtime payload into an empty
+external directory:
+
+```bash
+stage_parent="$(mktemp -d)"
+python3 tools/stage_plugin.py \
+  --format portable \
+  --output "$stage_parent/gepa-omni"
+```
+
+For the current OpenAI/Codex plugin format, add this repository as a Codex
+plugin marketplace and install GEPA Omni:
 
 ```bash
 codex plugin marketplace add Qredence/gepa-omni
@@ -168,8 +181,9 @@ no silent unsandboxed fallback.
 
 | Path | Purpose |
 | --- | --- |
-| `.codex-plugin/plugin.json` | Installable manifest and marketplace metadata. |
-| `skills/gepa-omni-skill/SKILL.md` | The shipped Codex skill and default workflow. |
+| `plugin.json` | Portable Agent Plugins 1.0 manifest. |
+| `.codex-plugin/plugin.json` | OpenAI/Codex compatibility manifest. |
+| `skills/gepa-omni-skill/SKILL.md` | The shipped portable skill and default workflow. |
 | `skills/gepa-omni-skill/references/` | API, Omni, evaluator, backend, tracking, and gotcha guides. |
 | `skills/gepa-omni-skill/scripts/` | Codex/Pi proposers, Omni composition, preflight, and self-evaluation entrypoints. |
 | `tests/` and `tools/test_*.py` | Deterministic contract, proposer, pipeline, preflight, staging, and harness tests. |
@@ -188,17 +202,28 @@ git diff --check
 ```
 
 The development checkout contains tests and tooling that are not part of the
-installed plugin. Stage only the runtime payload into an empty external
+installed plugin. Stage the portable runtime payload into an empty external
 directory whose final name is `gepa-omni`:
 
 ```bash
 stage_parent="$(mktemp -d)"
-python3 tools/stage_plugin.py --output "$stage_parent/gepa-omni"
+python3 tools/stage_plugin.py \
+  --format portable \
+  --output "$stage_parent/gepa-omni"
 ```
 
-The staged payload must contain only `.codex-plugin/`, `skills/`, and `LICENSE`.
-Publish or install that staged payload through the configured Codex marketplace
-using the plugin ID `gepa-omni`.
+The portable staged payload must contain only `plugin.json`, `skills/`, and
+`LICENSE`. To stage the OpenAI/Codex compatibility export instead, use:
+
+```bash
+python3 tools/stage_plugin.py \
+  --format codex \
+  --output "$stage_parent/gepa-omni"
+```
+
+The Codex staged payload contains only `.codex-plugin/`, `skills/`, and
+`LICENSE`; install it through the configured Codex marketplace using the plugin
+ID `gepa-omni`.
 
 Keep proposal artifacts, evaluation runs, credentials, `.plugin-eval/` data,
 and generated Python caches out of Git. When packaging or runtime behavior

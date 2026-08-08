@@ -8,11 +8,16 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Final
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CANONICAL_PLUGIN_NAME = "gepa-omni"
-SHIPPED_PATHS = (Path(".codex-plugin"), Path("skills"), Path("LICENSE"))
+DEFAULT_PACKAGE_FORMAT: Final = "portable"
+SHIPPED_PATHS_BY_FORMAT: Final = {
+    "portable": (Path("plugin.json"), Path("skills"), Path("LICENSE")),
+    "codex": (Path(".codex-plugin"), Path("skills"), Path("LICENSE")),
+}
 
 
 def _validate_output(output: Path) -> Path:
@@ -29,11 +34,12 @@ def _validate_output(output: Path) -> Path:
     return resolved
 
 
-def stage(output: Path) -> Path:
-    """Copy only the files required by the installed plugin into *output*."""
-
-    destination = _validate_output(output)
-    destination.mkdir(parents=True, exist_ok=True)
+def _tracked_paths(package_format: str) -> list[Path]:
+    try:
+        shipped_paths = SHIPPED_PATHS_BY_FORMAT[package_format]
+    except KeyError as exc:
+        choices = ", ".join(sorted(SHIPPED_PATHS_BY_FORMAT))
+        raise ValueError(f"unsupported package format {package_format!r}; choose one of {choices}") from exc
 
     command = [
         "git",
@@ -42,7 +48,7 @@ def stage(output: Path) -> Path:
         "ls-files",
         "-z",
         "--",
-        *(str(path) for path in SHIPPED_PATHS),
+        *(str(path) for path in shipped_paths),
     ]
     result = subprocess.run(command, capture_output=True, check=False)
     if result.returncode != 0:
@@ -50,6 +56,20 @@ def stage(output: Path) -> Path:
         raise RuntimeError(f"could not enumerate tracked plugin files: {detail}")
 
     tracked_paths = [Path(path) for path in result.stdout.decode().split("\0") if path]
+    if package_format == "portable" and Path("plugin.json") not in tracked_paths:
+        # Keep local staging usable before a newly added manifest is staged in Git,
+        # while continuing to reject arbitrary untracked runtime files.
+        tracked_paths.insert(0, Path("plugin.json"))
+    return tracked_paths
+
+
+def stage(output: Path, package_format: str = DEFAULT_PACKAGE_FORMAT) -> Path:
+    """Copy one allowlisted plugin format into *output*."""
+
+    destination = _validate_output(output)
+    destination.mkdir(parents=True, exist_ok=True)
+
+    tracked_paths = _tracked_paths(package_format)
     for relative_path in tracked_paths:
         source = REPO_ROOT / relative_path
         target = destination / relative_path
@@ -68,13 +88,20 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Empty external directory named gepa-omni",
     )
+    parser.add_argument(
+        "--format",
+        dest="package_format",
+        choices=tuple(SHIPPED_PATHS_BY_FORMAT),
+        default=DEFAULT_PACKAGE_FORMAT,
+        help="Package format to stage (default: portable)",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
-        destination = stage(args.output)
+        destination = stage(args.output, package_format=args.package_format)
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
         print(f"plugin staging error: {exc}", file=sys.stderr)
         return 2
