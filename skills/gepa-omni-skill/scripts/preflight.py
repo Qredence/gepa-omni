@@ -30,6 +30,7 @@ problems: list[str] = []
 
 ENGINE_CHOICES = ("gepa", "best_of_n", "autoresearch", "meta_harness", "codex", "omni")
 BUILTIN_ENGINES = {"gepa", "best_of_n", "autoresearch", "meta_harness"}
+AGENT_ENGINES = ("autoresearch", "meta_harness")
 COMPOSITION_HELPERS = (
     "optimize_best_of",
     "optimize_sequential",
@@ -38,8 +39,8 @@ COMPOSITION_HELPERS = (
     "optimize_adaptive_sequential",
 )
 DEFAULT_LM_BY_ENGINE = {
-    "gepa": "openai/gpt-5.1",
-    "best_of_n": "claude-sonnet-4-6",
+    "gepa": "openai/gpt-5.6-luna",
+    "best_of_n": "gpt-5.6-luna",
 }
 
 
@@ -67,6 +68,13 @@ def _creds_for(lm: str) -> tuple[bool, str]:
         return bool(os.environ.get("ANTHROPIC_API_KEY")) or has_aws, ("export ANTHROPIC_API_KEY (or AWS creds)")
     any_key = bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or has_aws)
     return any_key, "export your LiteLLM provider's API key"
+
+
+def _check_command(command: str, label: str, fix: str) -> None:
+    executable = shutil.which(command)
+    check(label, bool(executable), fix)
+    if executable:
+        print(f"      {command} -> {executable}")
 
 
 def _check_gepa_import() -> tuple[bool, set[str]]:
@@ -119,52 +127,60 @@ def _check_engine_available(engine: str, available: set[str]) -> None:
     )
 
 
+def _required_agent_tools(
+    engine: str,
+    backend: str,
+    pi_command: str,
+    codex_command: str,
+) -> tuple[str, ...]:
+    runner = {"codex": codex_command, "pi": pi_command}.get(backend, "claude")
+    required = [runner]
+    if engine in AGENT_ENGINES:
+        required.extend(("jq", "curl"))
+    return tuple(required)
+
+
+def _check_pi_sandbox_tool() -> None:
+    executable = shutil.which("sandbox-exec") or (
+        "/usr/bin/sandbox-exec" if os.path.exists("/usr/bin/sandbox-exec") else None
+    )
+    check(
+        "`sandbox-exec` on PATH (sandbox=True provides Pi OS confinement)",
+        bool(executable),
+        "macOS Seatbelt is required for sandboxed Pi runs; no unsandboxed fallback is used",
+    )
+    if executable:
+        print(f"      sandbox-exec -> {executable}")
+
+
 def _check_agent_tools(
     engine: str,
     backend: str,
     pi_command: str = "pi",
     codex_command: str = "codex",
 ) -> None:
-    required = [codex_command if backend == "codex" else pi_command if backend == "pi" else "claude"]
-    if engine in {"autoresearch", "meta_harness"}:
-        required.extend(("jq", "curl"))
-    for tool in required:
-        executable = shutil.which(tool)
-        check(
+    for tool in _required_agent_tools(engine, backend, pi_command, codex_command):
+        _check_command(
+            tool,
             f"`{tool}` on PATH (required by {engine}/{backend})",
-            bool(executable),
             f"install and authenticate `{tool}` before a live {engine} run",
         )
-        if executable:
-            print(f"      {tool} -> {executable}")
     if backend == "codex":
         return
     if sys.platform.startswith("linux"):
-        executable = shutil.which("bwrap")
-        check(
+        _check_command(
+            "bwrap",
             "`bwrap` on PATH (sandbox=True provides Pi OS confinement)"
             if backend == "pi"
             else "`bwrap` on PATH (default sandbox=True jails Claude)",
-            bool(executable),
             (
                 "install bubblewrap; Pi will not silently run unsandboxed"
                 if backend == "pi"
                 else "install bubblewrap; unsandboxed agent execution is not supported"
             ),
         )
-        if executable:
-            print(f"      bwrap -> {executable}")
     elif backend == "pi":
-        executable = shutil.which("sandbox-exec") or (
-            "/usr/bin/sandbox-exec" if os.path.exists("/usr/bin/sandbox-exec") else None
-        )
-        check(
-            "`sandbox-exec` on PATH (sandbox=True provides Pi OS confinement)",
-            bool(executable),
-            "macOS Seatbelt is required for sandboxed Pi runs; no unsandboxed fallback is used",
-        )
-        if executable:
-            print(f"      sandbox-exec -> {executable}")
+        _check_pi_sandbox_tool()
 
 
 def _check_pi_surface(gepa_available: bool) -> None:
@@ -255,18 +271,15 @@ def _check_codex_runner_surface(gepa_available: bool) -> None:
         print(f"      {exc}")
 
 
-def _check_codex_compatibility(gepa_available: bool, codex_command: str = "codex") -> None:
-    cli = shutil.which(codex_command)
-    check(
+def _check_codex_cli(codex_command: str) -> None:
+    _check_command(
+        codex_command,
         f"`{codex_command}` CLI on PATH (used by the GEPA proposer)",
-        bool(cli),
         f"install and authenticate the Codex CLI at {codex_command!r}",
     )
-    if cli:
-        print(f"      {codex_command} -> {cli}")
 
-    _check_codex_runner_surface(gepa_available)
 
+def _check_codex_proposer_surface() -> None:
     try:
         from codex_agent_proposer import CodexAgentProposer
 
@@ -294,8 +307,8 @@ def _check_codex_compatibility(gepa_available: bool, codex_command: str = "codex
         )
         print(f"      {exc}")
 
-    if not gepa_available:
-        return
+
+def _check_codex_engine_surface() -> None:
     try:
         from gepa.optimize_anything import (
             OptimizeAnythingConfig,
@@ -324,6 +337,15 @@ def _check_codex_compatibility(gepa_available: bool, codex_command: str = "codex
         print(f"      {exc}")
 
 
+def _check_codex_compatibility(gepa_available: bool, codex_command: str = "codex") -> None:
+    _check_codex_cli(codex_command)
+    _check_codex_runner_surface(gepa_available)
+    _check_codex_proposer_surface()
+    if not gepa_available:
+        return
+    _check_codex_engine_surface()
+
+
 def _check_lm_credentials(engine: str, backend: str = "claude") -> str:
     configured = os.environ.get("GEPA_REFLECTION_LM", "")
     effective = configured or DEFAULT_LM_BY_ENGINE[engine]
@@ -336,20 +358,23 @@ def _check_lm_credentials(engine: str, backend: str = "claude") -> str:
     return effective
 
 
+def _is_valid_pricing_value(value: object) -> bool:
+    return (
+        value is None
+        or isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and value >= 0
+        and math.isfinite(value)
+    )
+
+
 def _check_codex_pricing(args: argparse.Namespace) -> None:
     if args.agent_backend != "codex":
         return
     input_rate = args.codex_input_cost_per_million
     output_rate = args.codex_output_cost_per_million
     max_token_cost = args.max_token_cost
-    values_valid = all(
-        value is None
-        or isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and value >= 0
-        and math.isfinite(value)
-        for value in (input_rate, output_rate, max_token_cost)
-    )
+    values_valid = all(_is_valid_pricing_value(value) for value in (input_rate, output_rate, max_token_cost))
     check(
         "Codex pricing values are finite and non-negative",
         values_valid,
@@ -427,28 +452,36 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _check_agent_runtime(
+    args: argparse.Namespace,
+    gepa_available: bool,
+    engines: tuple[str, ...],
+) -> None:
+    for engine in engines:
+        _check_agent_tools(engine, args.agent_backend, args.pi_command, args.codex_command)
+    _check_codex_pricing(args)
+    surface_check = {
+        "pi": _check_pi_surface,
+        "codex": _check_codex_runner_surface,
+    }.get(args.agent_backend)
+    if surface_check:
+        surface_check(gepa_available)
+
+
 def _check_selected_runtime(args: argparse.Namespace, gepa_available: bool) -> None:
     if args.engine == "codex":
         _check_codex_compatibility(gepa_available, args.codex_command)
-    elif args.engine in {"autoresearch", "meta_harness"}:
-        _check_agent_tools(args.engine, args.agent_backend, args.pi_command, args.codex_command)
-        _check_codex_pricing(args)
-        if args.agent_backend == "pi":
-            _check_pi_surface(gepa_available)
-        elif args.agent_backend == "codex":
-            _check_codex_runner_surface(gepa_available)
-    elif args.engine == "omni":
-        _check_agent_tools("autoresearch", args.agent_backend, args.pi_command, args.codex_command)
-        _check_agent_tools("meta_harness", args.agent_backend, args.pi_command, args.codex_command)
-        _check_codex_pricing(args)
-        if args.agent_backend == "pi":
-            _check_pi_surface(gepa_available)
-        elif args.agent_backend == "codex":
-            _check_codex_runner_surface(gepa_available)
+        return
+    if args.engine in AGENT_ENGINES:
+        _check_agent_runtime(args, gepa_available, (args.engine,))
+        return
+    if args.engine == "omni":
+        _check_agent_runtime(args, gepa_available, AGENT_ENGINES)
         if gepa_available:
             _check_lm_credentials("gepa", args.agent_backend)
             _check_lm_credentials("best_of_n", args.agent_backend)
-    elif args.engine in {"gepa", "best_of_n"} and gepa_available:
+        return
+    if args.engine in {"gepa", "best_of_n"} and gepa_available:
         target = _check_lm_credentials(args.engine)
         if args.test_lm:
             _test_lm(target)

@@ -183,9 +183,9 @@ explore = optimize_best_of(
     valset=valset,
     objective=objective,
     configs=[
-        gepa_config,  # CodexAgentProposer locally
-        autoresearch_codex_config,  # agent_backend="codex"
-        meta_harness_codex_config,  # agent_backend="codex"
+        gepa_config,  # CodexAgentProposer or PiAgentProposer locally
+        autoresearch_codex_config,  # selected agent_backend
+        meta_harness_codex_config,  # selected agent_backend
     ],
 )
 
@@ -217,7 +217,7 @@ standalone engine instead.
 The default continuation is fresh `engine="gepa"` with the Codex proposer
 (“Omni-GEPA”). `continuation_engine="autoresearch"` and
 `continuation_engine="meta_harness"` are explicit alternatives using the
-local Codex backend by default. Pass `agent_backend="pi"` or
+selected local backend, Codex by default. Pass `agent_backend="pi"` or
 `agent_backend="claude"` for an explicit alternative. An explicit standalone `engine="gepa"`,
 `"autoresearch"`, `"meta_harness"`, or `"best_of_n"` bypasses this
 orchestration and receives the full supplied budget. The local implementation
@@ -225,10 +225,31 @@ is the internal `scripts/omni_pipeline.py` helper; the public launcher remains
 string-candidate-first and its proposer bridge remains component-based only
 inside the Codex/Pi adapter boundary.
 
-## `gepa` backend and Codex proposer
+### Omni model selection and P×N proposals
+
+The internal Omni helper accepts backend-specific model names and applies the
+selected value to GEPA, AutoResearch, Meta-Harness, and the fresh continuation:
+
+```python
+run_omni(..., agent_backend="codex", codex_model="gpt-5-codex")
+run_omni(..., agent_backend="pi", pi_model="provider/model")
+```
+
+Codex uses `codex_model` → legacy `agent_model` → the Codex CLI default. Pi
+uses `pi_model` → legacy `agent_model` → the Pi provider default. The
+non-selected backend field is ignored. Claude remains explicit and uses
+`agent_model` for its agentic engines; it is not an implicit fallback.
+
+For GEPA's opt-in parallel proposal strategy, pass
+`gepa_parallel_proposals=(parents, mutations)` with a suitable
+`max_concurrency`. The helper places `PxNSampling(p=parents, n=mutations)` and
+`AllImprovements()` in GEPA's `engine` configuration. Omitting the option keeps
+the existing sequential `max_workers=1, parallel=False` settings.
+
+## `gepa` backend and local proposer
 
 The `gepa` backend accepts a `GEPAConfig`-shaped `engine_config` mapping. The
-local Codex proposer is attached through the reflection configuration:
+local Codex or Pi proposer is attached through the reflection configuration:
 
 ```python
 from codex_agent_proposer import CodexAgentProposer
@@ -287,8 +308,8 @@ diagnostic files.
 ## Codex-backed agent engines
 
 The plugin's Omni default uses the maintained fork's writable Codex runner for
-both agent engines. GEPA itself continues to use the separate read-only
-`CodexAgentProposer`.
+both agent engines. GEPA uses the read-only `CodexAgentProposer` when Codex is
+selected and `PiAgentProposer` when Pi is selected.
 
 ```python
 codex_agent_settings = {
@@ -298,6 +319,9 @@ codex_agent_settings = {
     "codex_input_cost_per_million": 2.0,
     "codex_output_cost_per_million": 8.0,
 }
+
+When using `run_omni` or `run_optimization`, supply this choice as
+`codex_model`; `agent_model` is retained as its legacy fallback.
 
 autoresearch = OptimizeAnythingConfig(
     engine="autoresearch",
@@ -357,6 +381,9 @@ OptimizeAnythingConfig(
     },
 )
 ```
+
+When using `run_omni` or `run_optimization`, supply the Pi choice as
+`pi_model`; `agent_model` is retained as its legacy fallback.
 
 AutoResearch keeps one persistent Pi RPC process for Ralph continuations.
 Meta-Harness starts a fresh Pi session each iteration while retaining the

@@ -21,7 +21,7 @@ from pathlib import Path
 from textwrap import dedent
 from typing import Any
 
-from runtime_guards import validate_external_path
+from runtime_guards import require_sandbox, validate_external_path
 
 
 class CodexProposalError(Exception):
@@ -242,13 +242,18 @@ class CodexAgentProposer:
         run_dir: str | Path | None = None,
         model: str | None = None,
         timeout_seconds: float = 600,
+        codex_command: str = "codex",
+        sandbox: bool = True,
     ) -> None:
+        require_sandbox(sandbox)
         timeout = float(timeout_seconds)
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("timeout_seconds must be a finite positive number")
         self.run_dir = validate_external_path(run_dir, label="run_dir") if run_dir is not None else None
         self.model = model
         self.timeout_seconds = timeout
+        self.codex_command = codex_command
+        self.sandbox = sandbox
         self.last_proposal_dir: Path | None = None
         self._total_tokens_in = 0
         self._total_tokens_out = 0
@@ -321,9 +326,9 @@ class CodexAgentProposer:
         _write_json(proposal_dir / "metadata.json", metadata or {})
 
     def _command(self, proposal_dir: Path, schema_path: Path, output_path: Path) -> list[str]:
-        codex = shutil.which("codex")
+        codex = shutil.which(self.codex_command)
         if not codex:
-            raise CodexProcessError("`codex` CLI was not found on PATH", proposal_dir)
+            raise CodexProcessError(f"`{self.codex_command}` CLI was not found on PATH", proposal_dir)
         command = [
             codex,
             "exec",

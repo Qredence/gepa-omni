@@ -3,7 +3,8 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
+from unittest.mock import patch
 
 
 SCRIPT_DIR = (
@@ -47,8 +48,10 @@ class OmniPipelineTests(unittest.TestCase):
     def setUp(self) -> None:
         self.launcher = FakeLauncher()
         self.proposer_dirs: list[Path] = []
+        self.proposer_calls: list[dict[str, object]] = []
 
         def proposer_factory(**kwargs: object) -> object:
+            self.proposer_calls.append(dict(kwargs))
             self.proposer_dirs.append(kwargs["run_dir"])  # type: ignore[arg-type]
             return object()
 
@@ -122,6 +125,7 @@ class OmniPipelineTests(unittest.TestCase):
         self.assertEqual(configs[2].kwargs["engine_config"]["timeout_seconds"], 600.0)
         self.assertTrue(configs[1].kwargs["engine_config"]["ralph"])
         self.assertEqual(configs[2].kwargs["engine_config"]["max_candidates_per_iter"], 3)
+        self.assertEqual(configs[0].kwargs["engine_config"]["engine"], {"max_workers": 1, "parallel": False})
 
         final_seed, final_kwargs = self.launcher.optimize_calls[0]
         self.assertEqual(final_seed, "phase-1-winner")
@@ -171,11 +175,170 @@ class OmniPipelineTests(unittest.TestCase):
         self.assertEqual(autoresearch_config["max_no_eval_seconds"], 300)
         self.assertEqual(meta_config["timeout_seconds"], 45.0)
 
+    def test_backend_specific_models_propagate_to_gepa_agents_and_continuation(self) -> None:
+        cases = (
+            (
+                "codex",
+                {
+                    "codex_model": "gpt-5-codex",
+                    "pi_model": "ignored/pi-model",
+                    "codex_command": "/custom/bin/codex",
+                    "codex_proposer_factory": self.proposer_factory,
+                },
+            ),
+            (
+                "pi",
+                {
+                    "codex_model": "ignored-codex-model",
+                    "pi_model": "provider/pi-model",
+                    "pi_command": "/custom/bin/pi",
+                    "pi_proposer_factory": self.proposer_factory,
+                },
+            ),
+        )
+        for backend, model_options in cases:
+            with self.subTest(backend=backend):
+                self.launcher = FakeLauncher()
+                self.proposer_dirs = []
+                self.proposer_calls = []
+                options = {"agent_backend": backend, "agent_model": "legacy/model"}
+                options.update(model_options)
+                self._run_omni(**options)
+
+                configs = self.launcher.best_of_calls[0][1]["configs"]
+                selected_model = model_options[f"{backend}_model"]
+                self.assertEqual(
+                    [config.kwargs["engine_config"]["model"] for config in configs[1:]],
+                    [selected_model, selected_model],
+                )
+                self.assertEqual([call["model"] for call in self.proposer_calls], [selected_model, selected_model])
+                self.assertEqual([call["sandbox"] for call in self.proposer_calls], [True, True])
+                if backend == "codex":
+                    self.assertEqual(
+                        [call["codex_command"] for call in self.proposer_calls],
+                        ["/custom/bin/codex", "/custom/bin/codex"],
+                    )
+                else:
+                    self.assertEqual(
+                        [call["pi_command"] for call in self.proposer_calls],
+                        ["/custom/bin/pi", "/custom/bin/pi"],
+                    )
+
+    def test_run_optimization_forwards_backend_specific_selection_to_omni(self) -> None:
+        omni_pipeline.run_optimization(
+            "seed",
+            task=self.task,
+            max_evals=40,
+            max_token_cost=20.0,
+            run_dir="/external/runs/forwarded",
+            output_dir="/external/outputs/forwarded",
+            launcher=self.launcher,
+            config_cls=FakeConfig,
+            agent_backend="pi",
+            agent_model="legacy/model",
+            pi_model="provider/pi-model",
+            pi_proposer_factory=self.proposer_factory,
+        )
+
+        configs = self.launcher.best_of_calls[0][1]["configs"]
+        self.assertEqual(
+            [config.kwargs["engine_config"]["model"] for config in configs[1:]],
+            ["provider/pi-model", "provider/pi-model"],
+        )
+        self.assertEqual(
+            [call["model"] for call in self.proposer_calls],
+            ["provider/pi-model", "provider/pi-model"],
+        )
+
+    def test_existing_narrow_codex_factory_remains_supported(self) -> None:
+        calls: list[tuple[Path, str | None, float]] = []
+
+        def narrow_factory(run_dir: Path, model: str | None, timeout_seconds: float) -> object:
+            calls.append((run_dir, model, timeout_seconds))
+            return object()
+
+        self._run_omni(
+            codex_model="gpt-5-codex",
+            codex_proposer_factory=narrow_factory,
+        )
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual([call[1] for call in calls], ["gpt-5-codex", "gpt-5-codex"])
+
+    def test_legacy_agent_model_falls_back_for_codex_and_pi(self) -> None:
+        for backend, factory_name in (("codex", "codex_proposer_factory"), ("pi", "pi_proposer_factory")):
+            with self.subTest(backend=backend):
+                self.launcher = FakeLauncher()
+                self.proposer_dirs = []
+                self.proposer_calls = []
+                self._run_omni(
+                    agent_backend=backend,
+                    agent_model="legacy/model",
+                    **{factory_name: self.proposer_factory},
+                )
+
+                configs = self.launcher.best_of_calls[0][1]["configs"]
+                self.assertEqual(
+                    [config.kwargs["engine_config"]["model"] for config in configs[1:]],
+                    ["legacy/model", "legacy/model"],
+                )
+                self.assertEqual([call["model"] for call in self.proposer_calls], ["legacy/model", "legacy/model"])
+
+    def test_gepa_parallel_proposals_are_opt_in_and_use_pxn_strategies(self) -> None:
+        class FakePxNSampling:
+            def __init__(self, *, p: int, n: int) -> None:
+                self.p = p
+                self.n = n
+
+        class FakeAllImprovements:
+            pass
+
+        gepa_package = ModuleType("gepa")
+        gepa_package.__path__ = []  # type: ignore[attr-defined]
+        strategies_package = ModuleType("gepa.strategies")
+        strategies_package.__path__ = []  # type: ignore[attr-defined]
+        sampling_module = ModuleType("gepa.strategies.proposal_sampling")
+        sampling_module.PxNSampling = FakePxNSampling  # type: ignore[attr-defined]
+        selection_module = ModuleType("gepa.strategies.proposal_selection")
+        selection_module.AllImprovements = FakeAllImprovements  # type: ignore[attr-defined]
+
+        with patch.dict(
+            sys.modules,
+            {
+                "gepa": gepa_package,
+                "gepa.strategies": strategies_package,
+                "gepa.strategies.proposal_sampling": sampling_module,
+                "gepa.strategies.proposal_selection": selection_module,
+            },
+        ):
+            self._run_omni(
+                max_concurrency=4,
+                gepa_parallel_proposals=(2, 3),
+            )
+
+        configs = self.launcher.best_of_calls[0][1]["configs"]
+        gepa_configs = [config for config in configs if config.kwargs["engine"] == "gepa"]
+        gepa_configs.append(self.launcher.optimize_calls[0][1]["config"])
+        for config in gepa_configs:
+            engine = config.kwargs["engine_config"]["engine"]
+            self.assertEqual(engine["max_workers"], 4)
+            self.assertTrue(engine["parallel"])
+            self.assertIsInstance(engine["sampling_strategy"], FakePxNSampling)
+            self.assertEqual((engine["sampling_strategy"].p, engine["sampling_strategy"].n), (2, 3))
+            self.assertIsInstance(engine["selection_strategy"], FakeAllImprovements)
+
+    def test_gepa_parallel_proposals_reject_invalid_values(self) -> None:
+        with self.assertRaisesRegex(ValueError, "positive integers"):
+            self._run_omni(gepa_parallel_proposals=(0, 2))
+        with self.assertRaisesRegex(ValueError, "tuple"):
+            self._run_omni(gepa_parallel_proposals=[2, 2])
+
     def test_pi_and_claude_remain_explicit_agent_backend_options(self) -> None:
         for backend in ("pi", "claude"):
             with self.subTest(backend=backend):
                 self.launcher = FakeLauncher()
                 self.proposer_dirs = []
+                self.proposer_calls = []
                 self._run_omni(agent_backend=backend, agent_model="provider/model")
                 configs = self.launcher.best_of_calls[0][1]["configs"]
                 self.assertEqual(
@@ -186,6 +349,7 @@ class OmniPipelineTests(unittest.TestCase):
                     self.assertEqual(configs[1].kwargs["engine_config"]["pi_command"], "pi")
                 else:
                     self.assertNotIn("pi_command", configs[1].kwargs["engine_config"])
+                    self.assertNotIn("codex_command", configs[1].kwargs["engine_config"])
 
     def test_claude_uses_its_default_model_when_no_model_is_supplied(self) -> None:
         self._run_omni(agent_backend="claude")

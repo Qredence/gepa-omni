@@ -3,10 +3,10 @@
   "version": "0.1.0+codex.20260803175918",
   "description": "Optimize scorable prompts, code, configs, schemas, SQL, regexes, and agent instructions with GEPA's Omni portfolio and fresh continuation workflow.",
   "author": {
-    "name": "GEPA",
+    "name": "Zachary BENSALEM",
     "url": "https://github.com/Qredence/gepa-omni"
   },
-  "homepage": "https://gepa-ai.github.io/gepa/",
+  "homepage": "https://github.com/Qredence/gepa-omni",
   "repository": "https://github.com/Qredence/gepa-omni",
   "license": "MIT",
   "keywords": [

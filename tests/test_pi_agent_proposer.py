@@ -24,6 +24,7 @@ from pi_agent_proposer import (  # noqa: E402
 
 class FakePiRunner:
     calls: list[tuple[dict[str, object], str]] = []
+    instances: list[dict[str, object]] = []
     response: object = {"new_texts": {"prompt": "improved"}, "summary": "better"}
     returncode = 0
     timed_out = False
@@ -31,6 +32,7 @@ class FakePiRunner:
 
     def __init__(self, **kwargs: object) -> None:
         self.kwargs = kwargs
+        self.instances.append(kwargs)
         self.command = [
             "pi",
             "--mode",
@@ -72,6 +74,7 @@ class PiAgentProposerTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.run_dir = Path(self.tempdir.name)
         FakePiRunner.calls = []
+        FakePiRunner.instances = []
         FakePiRunner.response = {"new_texts": {"prompt": "improved"}, "summary": "better"}
         FakePiRunner.returncode = 0
         FakePiRunner.timed_out = False
@@ -100,6 +103,7 @@ class PiAgentProposerTests(unittest.TestCase):
                 ["prompt"],
             )
         self.assertEqual(result, {"prompt": "improved"})
+        self.assertEqual(FakePiRunner.instances[0]["model"], "provider/model")
         proposal_dir = proposer.last_proposal_dir
         assert proposal_dir is not None
         proposal_dirs = list((self.run_dir / "proposals").iterdir())

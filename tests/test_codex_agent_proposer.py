@@ -83,6 +83,7 @@ class CodexAgentProposerTests(unittest.TestCase):
         returncode: int = 0,
         timeout: bool = False,
         model: str | None = None,
+        codex_command: str = "codex",
         timeout_seconds: float = 1,
     ) -> tuple[dict[str, str] | None, FakeProcess, CodexAgentProposer]:
         holder: dict[str, FakeProcess] = {}
@@ -92,7 +93,12 @@ class CodexAgentProposerTests(unittest.TestCase):
             holder["process"] = process
             return process
 
-        proposer = CodexAgentProposer(self.run_dir, model=model, timeout_seconds=timeout_seconds)
+        proposer = CodexAgentProposer(
+            self.run_dir,
+            model=model,
+            timeout_seconds=timeout_seconds,
+            codex_command=codex_command,
+        )
         with patch.object(proposer_module.shutil, "which", return_value="/usr/local/bin/codex"), patch.object(
             proposer_module.subprocess, "Popen", side_effect=make_process
         ):
@@ -107,6 +113,8 @@ class CodexAgentProposerTests(unittest.TestCase):
     def test_in_checkout_run_directory_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "outside the development checkout"):
             CodexAgentProposer(Path(__file__).resolve().parents[1] / "runs")
+        with self.assertRaisesRegex(ValueError, "sandbox must be True"):
+            CodexAgentProposer(self.run_dir, sandbox=False)
 
     def test_valid_proposal_materializes_context_and_usage(self) -> None:
         result, process, proposer = self._call(
@@ -184,9 +192,13 @@ class CodexAgentProposerTests(unittest.TestCase):
 
     def test_command_uses_only_safe_cli_flags(self) -> None:
         result, process, _proposer = self._call(
-            {"new_texts": {"prompt": "new"}}, model="gpt-5", timeout_seconds=4
+            {"new_texts": {"prompt": "new"}},
+            model="gpt-5",
+            codex_command="/custom/bin/codex",
+            timeout_seconds=4,
         )
         self.assertEqual(result, {"prompt": "new"})
+        self.assertEqual(process.command[0], "/usr/local/bin/codex")
         self.assertIn("--ephemeral", process.command)
         self.assertIn("--ignore-user-config", process.command)
         self.assertIn("--skip-git-repo-check", process.command)

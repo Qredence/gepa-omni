@@ -12,7 +12,7 @@ shared seed + evaluator + objective + dataset/valset
           ┌──────────────┼────────────────┐
           │              │                │
        gepa        autoresearch      meta_harness
-   Codex proposer   Codex, persistent Codex, fresh sessions
+   selected proposer Codex, persistent Codex, fresh sessions
           └──────────────┼────────────────┘
                          │ highest-scoring best_candidate
                          ▼
@@ -35,9 +35,9 @@ removed from Phase 1. The Phase 1 winner is passed as the string seed of a new
 Phase 2 config. The default continuation is fresh GEPA (`engine="gepa"`) with
 `CodexAgentProposer`, so the default local flow is “Omni-GEPA”. A caller may
 explicitly set `continuation_engine="autoresearch"` or
-`continuation_engine="meta_harness"`; those continuations use the local Codex
-backend by default. Pass `agent_backend="pi"` or `agent_backend="claude"` for
-an explicit alternative.
+`continuation_engine="meta_harness"`; those continuations use the selected
+backend, Codex by default. Pass `agent_backend="pi"` or
+`agent_backend="claude"` for an explicit alternative.
 
 Conceptually, the public composition calls are:
 
@@ -83,6 +83,26 @@ not change the configured four-way allocation. Keep the total budget large
 enough for meaningful proposal rounds; four tiny slices are a valid error
 avoidance mechanism, not a useful optimization plan.
 
+## Backend-specific models
+
+Pass `codex_model` or `pi_model` to the Omni helper to use an explicit model
+throughout GEPA, AutoResearch, Meta-Harness, and the fresh continuation:
+
+```python
+run_omni(..., agent_backend="codex", codex_model="gpt-5-codex")
+run_omni(..., agent_backend="pi", pi_model="provider/model")
+```
+
+Codex resolves `codex_model` → legacy `agent_model` → the Codex CLI default.
+Pi resolves `pi_model` → legacy `agent_model` → the Pi provider default. The
+other backend-specific field is ignored. Claude remains an explicit agentic
+backend and uses `agent_model`; it is never selected implicitly as a fallback.
+
+To enable GEPA's parallel P×N proposal strategy, pass
+`gepa_parallel_proposals=(parents, mutations)` and a suitable
+`max_concurrency`. The helper supplies `PxNSampling` and `AllImprovements` to
+GEPA. Omitting the option retains the sequential one-worker configuration.
+
 ## Data-set boundaries
 
 Use `dataset` and `valset` for optimization and selection according to the
@@ -93,21 +113,22 @@ the held-out result.
 
 ## Runtime substitutions
 
-- `gepa`: `CodexAgentProposer`, with read-only proposal isolation and structured
-  `new_texts` validation.
-- `autoresearch`: `agent_backend="codex"` with one persisted Codex thread for
-  Ralph-style continuation. Codex uses `--sandbox workspace-write` in the
+- `gepa`: `CodexAgentProposer` for `agent_backend="codex"` or
+  `PiAgentProposer` for `agent_backend="pi"`, with read-only proposal isolation
+  and structured `new_texts` validation.
+- `autoresearch`: the selected explicit agent backend with one persisted session
+  for Ralph-style continuation. Codex uses `--sandbox workspace-write` in the
   external engine workspace.
-- `meta_harness`: `agent_backend="codex"` with fresh ephemeral Codex sessions
-  per iteration and persistent frontier/workspace state.
+- `meta_harness`: the selected explicit agent backend with fresh ephemeral
+  sessions per iteration and persistent frontier/workspace state.
 
 Run `preflight.py --engine omni` before a live Omni run. The
 `omni` value is a preflight target that checks the complete runtime surface; it
 is not a value to pass as the launcher's `engine=`. OS sandbox prerequisites,
-the maintained GEPA fork's Codex runner, Codex, and credentials must be
-available in the consumer environment. When `max_token_cost` is configured,
-also pass both Codex pricing rates to preflight. No model calls are made by
-preflight unless explicitly requested.
+the maintained GEPA fork's selected agent runner, the selected CLI, and
+credentials must be available in the consumer environment. When
+`max_token_cost` is configured for Codex, also pass both Codex pricing rates to
+preflight. No model calls are made by preflight unless explicitly requested.
 
 ## Standalone overrides
 

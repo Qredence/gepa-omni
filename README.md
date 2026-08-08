@@ -45,7 +45,7 @@ fresh GEPA; AutoResearch and Meta-Harness continuations are explicit options.
 ```mermaid
 flowchart LR
     seed["Seed candidate + evaluator"] --> explore["Phase 1: parallel exploration"]
-    explore --> gepa["GEPA\nread-only Codex proposer"]
+    explore --> gepa["GEPA\nread-only Codex/Pi proposer"]
     explore --> auto["AutoResearch\nwritable Codex workspace"]
     explore --> meta["Meta-Harness\nfresh Codex sessions"]
     gepa --> winner["Best Phase 1 candidate"]
@@ -67,6 +67,10 @@ Important boundaries:
 - The public `optimize_anything` API is string-candidate-first. The local
   Codex/Pi proposer adapters use named component mappings only at their
   lower-level proposer boundary.
+- `codex_model` and `pi_model` select the model for the chosen Omni backend
+  across GEPA, AutoResearch, Meta-Harness, and the fresh continuation. The
+  legacy `agent_model` remains the fallback; the non-selected backend field is
+  ignored.
 
 ## Use from Codex
 
@@ -117,7 +121,7 @@ the complete launcher contract.
 
 | Engine | Behavior | Default local runtime |
 | --- | --- | --- |
-| `gepa` | Reflective evolutionary search using evaluator feedback. | Read-only `CodexAgentProposer`. |
+| `gepa` | Reflective evolutionary search using evaluator feedback. | Read-only `CodexAgentProposer`; select Pi explicitly. |
 | `autoresearch` | Long-horizon experiment loop with Ralph-style continuation. | Writable Codex runner; Pi/Claude are explicit alternatives. |
 | `meta_harness` | Proposes candidates while the framework evaluates and selects them. | Fresh ephemeral Codex session per iteration; Pi/Claude are explicit alternatives. |
 | `best_of_n` | Independent candidate sampling baseline. | No feedback or search history. |
@@ -125,6 +129,19 @@ the complete launcher contract.
 For a standalone run, pass one of the four engine names above and give it the
 full budget. For the normal portfolio workflow, omit the engine override and
 use the local `skills/gepa-omni-skill/scripts/omni_pipeline.py` helper.
+
+To choose the model explicitly in Omni, use one of these backend-specific
+parameters:
+
+```python
+run_omni(..., agent_backend="codex", codex_model="gpt-5-codex")
+run_omni(..., agent_backend="pi", pi_model="provider/model")
+```
+
+Codex uses `codex_model`, then legacy `agent_model`, then the CLI default. Pi
+uses `pi_model`, then legacy `agent_model`, then its provider default. For GEPA,
+pass `gepa_parallel_proposals=(2, 2)` with a suitable `max_concurrency` to
+enable P×N sampling; omit it to retain sequential GEPA.
 
 ## Requirements
 

@@ -2,7 +2,7 @@
 
 The public API remains ``gepa.optimize_anything``. This module only composes
 that API's existing ``optimize_best_of`` and ``optimize_anything`` entrypoints
-for the Codex-native skill workflow.
+for the Codex/Pi-native skill workflow.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
+from inspect import Parameter, signature
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -84,6 +85,19 @@ def _full_budget(max_evals: int | None, max_token_cost: float | None) -> BudgetS
     return BudgetSlice(max_evals, max_token_cost)
 
 
+def _validate_parallel_proposals(
+    proposals: tuple[int, int] | None,
+) -> tuple[int, int] | None:
+    if proposals is None:
+        return None
+    if not isinstance(proposals, tuple) or len(proposals) != 2:
+        raise ValueError("gepa_parallel_proposals must be a (parents, mutations) tuple")
+    parents, mutations = proposals
+    if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in proposals):
+        raise ValueError("gepa_parallel_proposals values must be positive integers")
+    return parents, mutations
+
+
 def _load_launcher(launcher: Any | None, config_cls: Callable[..., Any] | None) -> tuple[Any, Any]:
     if launcher is not None:
         if config_cls is None:
@@ -103,18 +117,109 @@ def _load_launcher(launcher: Any | None, config_cls: Callable[..., Any] | None) 
     )
 
 
+def _call_proposer_factory(factory: Callable[..., Any], **kwargs: Any) -> Any:
+    """Pass new proposer options while retaining older narrow factory hooks."""
+
+    try:
+        factory_signature = signature(factory)
+    except (TypeError, ValueError):
+        return factory(**kwargs)
+    parameters = factory_signature.parameters.values()
+    if any(parameter.kind is Parameter.VAR_KEYWORD for parameter in parameters):
+        return factory(**kwargs)
+    accepted = {name: value for name, value in kwargs.items() if name in factory_signature.parameters}
+    return factory(**accepted)
+
+
 def _make_codex_proposer(
     run_dir: Path,
     *,
     model: str | None,
     timeout_seconds: float,
+    codex_command: str,
+    sandbox: bool,
     factory: Callable[..., Any] | None,
 ) -> Any:
     if factory is None:
         from codex_agent_proposer import CodexAgentProposer
 
         factory = CodexAgentProposer
-    return factory(run_dir=run_dir, model=model, timeout_seconds=timeout_seconds)
+    return _call_proposer_factory(
+        factory,
+        run_dir=run_dir,
+        model=model,
+        timeout_seconds=timeout_seconds,
+        codex_command=codex_command,
+        sandbox=sandbox,
+    )
+
+
+def _make_pi_proposer(
+    run_dir: Path,
+    *,
+    model: str | None,
+    timeout_seconds: float,
+    pi_command: str,
+    sandbox: bool,
+    factory: Callable[..., Any] | None,
+) -> Any:
+    if factory is None:
+        from pi_agent_proposer import PiAgentProposer
+
+        factory = PiAgentProposer
+    return _call_proposer_factory(
+        factory,
+        run_dir=run_dir,
+        model=model,
+        timeout_seconds=timeout_seconds,
+        pi_command=pi_command,
+        sandbox=sandbox,
+    )
+
+
+def _backend_model(
+    backend: str,
+    *,
+    agent_model: str | None,
+    codex_model: str | None,
+    pi_model: str | None,
+) -> str | None:
+    if backend == "codex":
+        return codex_model if codex_model is not None else agent_model
+    if backend == "pi":
+        return pi_model if pi_model is not None else agent_model
+    return agent_model
+
+
+def _make_gepa_proposer(
+    run_dir: Path,
+    *,
+    agent_backend: str,
+    model: str | None,
+    timeout_seconds: float,
+    pi_command: str,
+    codex_command: str,
+    sandbox: bool,
+    codex_factory: Callable[..., Any] | None,
+    pi_factory: Callable[..., Any] | None,
+) -> Any:
+    if agent_backend == "pi":
+        return _make_pi_proposer(
+            run_dir,
+            model=model,
+            timeout_seconds=timeout_seconds,
+            pi_command=pi_command,
+            sandbox=sandbox,
+            factory=pi_factory,
+        )
+    return _make_codex_proposer(
+        run_dir,
+        model=model,
+        timeout_seconds=timeout_seconds,
+        codex_command=codex_command,
+        sandbox=sandbox,
+        factory=codex_factory,
+    )
 
 
 def _engine_config(
@@ -124,24 +229,53 @@ def _engine_config(
     agent_backend: str,
     agent_model: str | None,
     codex_model: str | None,
+    pi_model: str | None,
     pi_command: str,
     codex_command: str,
     codex_input_cost_per_million: float | None,
     codex_output_cost_per_million: float | None,
     codex_timeout_seconds: float,
     codex_proposer_factory: Callable[..., Any] | None,
+    pi_proposer_factory: Callable[..., Any] | None,
+    max_concurrency: int,
+    sandbox: bool,
+    gepa_parallel_proposals: tuple[int, int] | None,
 ) -> dict[str, Any]:
     if agent_backend not in AGENT_BACKENDS:
         raise ValueError(f"unsupported agent_backend {agent_backend!r}; choose " + ", ".join(AGENT_BACKENDS))
     if engine == "gepa":
-        proposer = _make_codex_proposer(
+        proposer = _make_gepa_proposer(
             run_dir / "proposer",
-            model=codex_model,
+            agent_backend=agent_backend,
+            model=_backend_model(
+                agent_backend,
+                agent_model=agent_model,
+                codex_model=codex_model,
+                pi_model=pi_model,
+            ),
             timeout_seconds=codex_timeout_seconds,
-            factory=codex_proposer_factory,
+            pi_command=pi_command,
+            codex_command=codex_command,
+            sandbox=sandbox,
+            codex_factory=codex_proposer_factory,
+            pi_factory=pi_proposer_factory,
         )
+        engine_settings: dict[str, Any] = {"max_workers": 1, "parallel": False}
+        if gepa_parallel_proposals is not None:
+            from gepa.strategies.proposal_sampling import PxNSampling
+            from gepa.strategies.proposal_selection import AllImprovements
+
+            parents, mutations = gepa_parallel_proposals
+            engine_settings.update(
+                {
+                    "max_workers": max_concurrency,
+                    "parallel": True,
+                    "sampling_strategy": PxNSampling(p=parents, n=mutations),
+                    "selection_strategy": AllImprovements(),
+                }
+            )
         return {
-            "engine": {"max_workers": 1, "parallel": False},
+            "engine": engine_settings,
             "reflection": {
                 "reflection_lm": None,
                 "custom_candidate_proposer": proposer,
@@ -149,7 +283,12 @@ def _engine_config(
             },
         }
     if engine == "autoresearch":
-        model = codex_model if agent_backend == "codex" and codex_model is not None else agent_model
+        model = _backend_model(
+            agent_backend,
+            agent_model=agent_model,
+            codex_model=codex_model,
+            pi_model=pi_model,
+        )
         if agent_backend == "claude" and model is None:
             model = "claude-sonnet-4-6"
         config: dict[str, Any] = {
@@ -171,7 +310,12 @@ def _engine_config(
             )
         return config
     if engine == "meta_harness":
-        model = codex_model if agent_backend == "codex" and codex_model is not None else agent_model
+        model = _backend_model(
+            agent_backend,
+            agent_model=agent_model,
+            codex_model=codex_model,
+            pi_model=pi_model,
+        )
         if agent_backend == "claude" and model is None:
             model = "claude-sonnet-4-6"
         config = {
@@ -211,12 +355,15 @@ def _make_config(
     agent_backend: str,
     agent_model: str | None,
     codex_model: str | None,
+    pi_model: str | None,
     pi_command: str,
     codex_command: str,
     codex_input_cost_per_million: float | None,
     codex_output_cost_per_million: float | None,
     codex_timeout_seconds: float,
     codex_proposer_factory: Callable[..., Any] | None,
+    pi_proposer_factory: Callable[..., Any] | None,
+    gepa_parallel_proposals: tuple[int, int] | None,
 ) -> Any:
     kwargs: dict[str, Any] = {
         "engine": engine,
@@ -230,12 +377,17 @@ def _make_config(
             agent_backend=agent_backend,
             agent_model=agent_model,
             codex_model=codex_model,
+            pi_model=pi_model,
             pi_command=pi_command,
             codex_command=codex_command,
             codex_input_cost_per_million=codex_input_cost_per_million,
             codex_output_cost_per_million=codex_output_cost_per_million,
             codex_timeout_seconds=codex_timeout_seconds,
             codex_proposer_factory=codex_proposer_factory,
+            pi_proposer_factory=pi_proposer_factory,
+            max_concurrency=max_concurrency,
+            sandbox=sandbox,
+            gepa_parallel_proposals=gepa_parallel_proposals,
         ),
     }
     if budget.max_evals is not None:
@@ -282,6 +434,7 @@ def run_omni(
     agent_backend: str = "codex",
     agent_model: str | None = None,
     codex_model: str | None = None,
+    pi_model: str | None = None,
     pi_command: str = "pi",
     codex_command: str = "codex",
     codex_input_cost_per_million: float | None = None,
@@ -290,6 +443,8 @@ def run_omni(
     launcher: Any | None = None,
     config_cls: Callable[..., Any] | None = None,
     codex_proposer_factory: Callable[..., Any] | None = None,
+    pi_proposer_factory: Callable[..., Any] | None = None,
+    gepa_parallel_proposals: tuple[int, int] | None = None,
 ) -> Any:
     """Run Phase 1 exploration followed by a fresh Phase 2 continuation."""
 
@@ -298,6 +453,7 @@ def run_omni(
         raise TypeError("seed_candidate must be a string")
     if continuation_engine not in EXPLORATION_ENGINES:
         raise ValueError("continuation_engine must be one of: " + ", ".join(EXPLORATION_ENGINES))
+    gepa_parallel_proposals = _validate_parallel_proposals(gepa_parallel_proposals)
     slices = partition_budget(max_evals, max_token_cost)
     launcher, config_cls = _load_launcher(launcher, config_cls)
     root = validate_external_path(run_dir, label="run_dir")
@@ -315,12 +471,15 @@ def run_omni(
             agent_backend=agent_backend,
             agent_model=agent_model,
             codex_model=codex_model,
+            pi_model=pi_model,
             pi_command=pi_command,
             codex_command=codex_command,
             codex_input_cost_per_million=codex_input_cost_per_million,
             codex_output_cost_per_million=codex_output_cost_per_million,
             codex_timeout_seconds=codex_timeout_seconds,
             codex_proposer_factory=codex_proposer_factory,
+            pi_proposer_factory=pi_proposer_factory,
+            gepa_parallel_proposals=gepa_parallel_proposals,
         )
         for index, engine in enumerate(EXPLORATION_ENGINES)
     ]
@@ -344,12 +503,15 @@ def run_omni(
         agent_backend=agent_backend,
         agent_model=agent_model,
         codex_model=codex_model,
+        pi_model=pi_model,
         pi_command=pi_command,
         codex_command=codex_command,
         codex_input_cost_per_million=codex_input_cost_per_million,
         codex_output_cost_per_million=codex_output_cost_per_million,
         codex_timeout_seconds=codex_timeout_seconds,
         codex_proposer_factory=codex_proposer_factory,
+        pi_proposer_factory=pi_proposer_factory,
+        gepa_parallel_proposals=gepa_parallel_proposals,
     )
     result = launcher.optimize_anything(
         best_candidate,
@@ -376,6 +538,7 @@ def run_optimization(
     agent_backend: str = "codex",
     agent_model: str | None = None,
     codex_model: str | None = None,
+    pi_model: str | None = None,
     pi_command: str = "pi",
     codex_command: str = "codex",
     codex_input_cost_per_million: float | None = None,
@@ -384,12 +547,15 @@ def run_optimization(
     launcher: Any | None = None,
     config_cls: Callable[..., Any] | None = None,
     codex_proposer_factory: Callable[..., Any] | None = None,
+    pi_proposer_factory: Callable[..., Any] | None = None,
+    gepa_parallel_proposals: tuple[int, int] | None = None,
 ) -> Any:
     """Run default Omni orchestration or one explicitly selected engine."""
 
     require_sandbox(sandbox)
     if not isinstance(seed_candidate, str):
         raise TypeError("seed_candidate must be a string")
+    gepa_parallel_proposals = _validate_parallel_proposals(gepa_parallel_proposals)
     if engine is None:
         return run_omni(
             seed_candidate,
@@ -405,6 +571,7 @@ def run_optimization(
             agent_backend=agent_backend,
             agent_model=agent_model,
             codex_model=codex_model,
+            pi_model=pi_model,
             pi_command=pi_command,
             codex_command=codex_command,
             codex_input_cost_per_million=codex_input_cost_per_million,
@@ -413,6 +580,8 @@ def run_optimization(
             launcher=launcher,
             config_cls=config_cls,
             codex_proposer_factory=codex_proposer_factory,
+            pi_proposer_factory=pi_proposer_factory,
+            gepa_parallel_proposals=gepa_parallel_proposals,
         )
     if engine not in STANDALONE_ENGINES:
         raise ValueError(
@@ -435,12 +604,15 @@ def run_optimization(
         agent_backend=agent_backend,
         agent_model=agent_model,
         codex_model=codex_model,
+        pi_model=pi_model,
         pi_command=pi_command,
         codex_command=codex_command,
         codex_input_cost_per_million=codex_input_cost_per_million,
         codex_output_cost_per_million=codex_output_cost_per_million,
         codex_timeout_seconds=codex_timeout_seconds,
         codex_proposer_factory=codex_proposer_factory,
+        pi_proposer_factory=pi_proposer_factory,
+        gepa_parallel_proposals=gepa_parallel_proposals,
     )
     return launcher.optimize_anything(
         seed_candidate,

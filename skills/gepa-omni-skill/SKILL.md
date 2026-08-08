@@ -81,8 +81,9 @@ For a normal “optimize this” request, use the two-phase Omni workflow in
 1. Define one shared candidate, evaluator, objective, dataset/valset, and explicit total
    budget.
 2. Run `gepa`, `autoresearch`, and `meta_harness` through `optimize_best_of` in parallel.
-   The local runtime uses the read-only `CodexAgentProposer` for GEPA and
-   `agent_backend="codex"` for both writable agentic branches by default.
+   The local runtime uses a read-only `CodexAgentProposer` or `PiAgentProposer` for
+   GEPA and the selected `agent_backend` for both writable agentic branches. Codex is
+   the default backend.
 3. Select `explore.best_candidate`, then start a fresh continuation optimizer in a new
    run/output directory. Fresh GEPA is the default continuation (“Omni-GEPA”); set
    `continuation_engine` explicitly only when an AutoResearch or Meta-Harness continuation
@@ -96,6 +97,47 @@ and one continuation. Omni requires an explicit usable `max_evals` and/or
 and use a standalone engine instead. The internal
 `scripts/omni_pipeline.py` helper composes the existing launcher primitives without
 changing their public API.
+
+### Backend-specific model selection
+
+The Omni helper accepts `codex_model` and `pi_model` so the same selected model is
+used by the GEPA proposer, AutoResearch, Meta-Harness, and fresh continuation:
+
+```python
+run_omni(
+    seed_candidate,
+    task=task,
+    agent_backend="codex",
+    codex_model="gpt-5-codex",
+    max_evals=40,
+    max_token_cost=20.0,
+    run_dir="external-runs/omni",
+    output_dir="external-runs/omni/output",
+)
+
+run_omni(
+    seed_candidate,
+    task=task,
+    agent_backend="pi",
+    pi_model="provider/model",
+    max_evals=40,
+    max_token_cost=20.0,
+    run_dir="external-runs/omni-pi",
+    output_dir="external-runs/omni-pi/output",
+)
+```
+
+For `codex`, selection is `codex_model`, then legacy `agent_model`, then the
+authenticated Codex CLI default. For `pi`, it is `pi_model`, then legacy
+`agent_model`, then the Pi provider default. The non-selected backend field is
+ignored. `agent_model` remains supported for compatibility; Claude is available
+only when explicitly selected with `agent_backend="claude"` and continues to use
+`agent_model` for its agentic engines.
+
+Set `gepa_parallel_proposals=(parents, mutations)` to opt GEPA into P×N sampling
+with `AllImprovements`; otherwise Omni keeps its sequential one-worker GEPA
+configuration. Set `max_concurrency` high enough to support the requested parallel
+proposals.
 
 ## Workflow
 
@@ -143,8 +185,8 @@ configuration is strict: keys belong to the selected backend, and swapping
 ## Engine selection
 
 - `gepa` performs in-process reflective mutation and Pareto-aware selection. The
-  Codex-native local adapter is `CodexAgentProposer`; `PiAgentProposer` is also
-  available for the component-level hook.
+  local adapter is `CodexAgentProposer` for `agent_backend="codex"` and
+  `PiAgentProposer` for `agent_backend="pi"`.
 - `autoresearch` runs a long-horizon experiment loop. The maintained local profile
   defaults to `agent_backend="codex"` and resumes one Codex thread for Ralph
   continuations; `pi` and `claude` remain explicit alternatives.
@@ -191,8 +233,9 @@ python3 skills/gepa-omni-skill/scripts/preflight.py --engine omni --agent-backen
 ```
 
 The plugin keeps backend selection in the local runtime layer: Codex is the
-default for the writable agent engines, while Pi and Claude are explicit
-alternatives. The read-only GEPA proposer remains Codex-native.
+default for all Omni branches, Pi is an explicit alternative, and Claude is an
+explicit alternative for the agentic engines. The GEPA custom proposer follows
+the selected Codex/Pi backend.
 
 ## Local setup and references
 
