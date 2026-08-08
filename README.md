@@ -1,24 +1,45 @@
 # GEPA Omni
 
-GEPA Omni is an Agent Plugins 1.0 package for improving scorable text
-artifacts—prompts, programs, configurations, schemas, SQL, regular expressions,
-plans, and agent instructions—with evaluator-driven search from
-[GEPA](https://github.com/gepa-ai/gepa). The repository also retains an
-OpenAI/Codex compatibility export for clients that use `.codex-plugin`.
+GEPA Omni is an [Agent Plugins 1.0](https://agent-plugins.org/) package and
+Codex-compatible plugin for improving any scorable text artifact: prompts,
+programs, configurations, schemas, SQL, regular expressions, plans, and agent
+instructions.
 
-The plugin combines three exploratory engines with a fresh continuation run:
-GEPA reflection, AutoResearch, and Meta-Harness. It also exposes each engine
-individually for comparison and debugging.
+It uses evaluator-driven search from
+[GEPA](https://github.com/gepa-ai/gepa), adds Codex and Pi proposer adapters,
+and provides a portfolio workflow across GEPA, AutoResearch, and Meta-Harness.
+Each engine is also available on its own for comparison and debugging.
 
-> The repository slug is `fleet-gepa-omni`, while the installable plugin ID is
-> `gepa-omni` and the shipped skill ID is `gepa-omni-skill`. This distinction is
-> intentional: the former identifies the GitHub repository; the latter two are
-> the package and skill identities consumed by agent clients.
+> The GitHub repository is `fleet-gepa-omni`; the installable plugin is
+> `gepa-omni`; and the shipped skill is `gepa-omni-skill`. These are separate
+> identities by design.
 
-## Quickstart
+## Install
 
-For a portable Agent Plugins package, stage the runtime payload into an empty
-external directory:
+### Codex
+
+Add the GitHub repository as a Codex marketplace, then install the plugin:
+
+```bash
+codex plugin marketplace add Qredence/gepa-omni
+codex plugin add gepa-omni@Qredence
+```
+
+Start a new Codex task after installation so the skill is loaded. Invoke it by
+naming the skill and describing the candidate and evaluator:
+
+```text
+Use $gepa-omni-skill to improve this prompt against my evaluator. Preserve the
+output format and report the held-out score separately.
+```
+
+The skill can also help design a feedback-rich evaluator or compare the GEPA,
+AutoResearch, and Meta-Harness engines.
+
+### Portable package
+
+To build a portable runtime payload from a development checkout, stage it into
+an empty directory outside the repository:
 
 ```bash
 stage_parent="$(mktemp -d)"
@@ -27,27 +48,22 @@ python3 tools/stage_plugin.py \
   --output "$stage_parent/gepa-omni"
 ```
 
-For the current OpenAI/Codex plugin format, add this repository as a Codex
-plugin marketplace and install GEPA Omni:
+The portable payload contains only `plugin.json`, `skills/`, and `LICENSE`.
+For the OpenAI/Codex compatibility payload, use `--format codex`; that payload
+contains `.codex-plugin/`, `skills/`, and `LICENSE`.
 
-```bash
-codex plugin marketplace add Qredence/gepa-omni
-codex plugin add gepa-omni@gepa-omni
-```
+## How Omni works
 
-## How the workflow works
-
-The default workflow shares one seed, evaluator, objective, and selection data
-across three Phase 1 branches. It selects the highest-scoring candidate, then
-starts a new Phase 2 optimizer with that candidate. The default continuation is
-fresh GEPA; AutoResearch and Meta-Harness continuations are explicit options.
+The default workflow runs three exploration engines against the same candidate,
+objective, evaluator, and selection data. It selects the best Phase 1 result,
+then starts a fresh Phase 2 optimizer with that candidate.
 
 ```mermaid
 flowchart LR
     seed["Seed candidate + evaluator"] --> explore["Phase 1: parallel exploration"]
     explore --> gepa["GEPA\nread-only Codex/Pi proposer"]
-    explore --> auto["AutoResearch\nwritable Codex workspace"]
-    explore --> meta["Meta-Harness\nfresh Codex sessions"]
+    explore --> auto["AutoResearch\nwritable agent workspace"]
+    explore --> meta["Meta-Harness\nfresh agent sessions"]
     gepa --> winner["Best Phase 1 candidate"]
     auto --> winner
     meta --> winner
@@ -55,50 +71,63 @@ flowchart LR
     continuation --> result["Candidate + selection score + held-out report"]
 ```
 
+The default continuation is fresh GEPA. Set `continuation_engine` explicitly
+to continue with AutoResearch or Meta-Harness instead.
+
 Important boundaries:
 
-- `test_set` is withheld from all Phase 1 branches and is scored only by the
+- `test_set` is withheld from every Phase 1 branch and scored only by the
   final Phase 2 run.
-- Omni requires an explicit `max_evals` and/or `max_token_cost`. An
+- Omni requires an explicit positive `max_evals` and/or `max_token_cost`. An
   evaluation-only run needs at least four evaluations so all four phases get a
-  positive slice; use a standalone engine for smaller budgets.
-- `omni` is a preflight target and the plugin's default orchestration mode. It
-  is not a value to pass as `OptimizeAnythingConfig(engine=...)`.
-- The public `optimize_anything` API is string-candidate-first. The local
-  Codex/Pi proposer adapters use named component mappings only at their
-  lower-level proposer boundary.
-- `codex_model` and `pi_model` select the model for the chosen Omni backend
-  across GEPA, AutoResearch, Meta-Harness, and the fresh continuation. The
-  legacy `agent_model` remains the fallback; the non-selected backend field is
-  ignored.
+  positive budget slice.
+- Omni is orchestration, not a public `engine="omni"` value. Use the default
+  workflow or select one of the standalone engines below.
+- The public `optimize_anything` launcher accepts a string candidate. The
+  local Codex/Pi adapters use named component mappings only at their internal
+  proposer boundary.
+- `run_dir` and `output_dir` must be outside the checkout when an engine needs
+  a workspace or writes diagnostics.
 
-## Use from Codex
+## Evaluator contract
 
-Invoke the shipped skill with a request that names the artifact and evaluator:
-
-```text
-Use $gepa-omni-skill to improve this prompt against my evaluator. Preserve the
-output format and report the held-out score separately.
-```
-
-Useful requests include:
-
-- “Optimize this candidate against my evaluator with Omni.”
-- “Help me write a feedback-rich GEPA evaluator.”
-- “Compare GEPA, AutoResearch, and Meta-Harness.”
-
-The skill is implicitly invocable, but explicitly naming
-`$gepa-omni-skill` makes the intended workflow clear.
-
-## Evaluator and data contract
-
-The evaluator should return a higher-is-better score plus actionable feedback:
+GEPA optimizes the score and feedback returned by your evaluator. Scores are
+higher-is-better, and feedback should explain why a candidate failed:
 
 ```python
 def evaluate(candidate: str, example) -> tuple[float, dict]:
     output = run_system(candidate, example)
     score = grade(output, example)
-    return score, {"output": output, "expected": example["gold"]}
+    return score, {
+        "output": output,
+        "expected": example.get("gold"),
+        "error": example.get("error"),
+    }
+```
+
+Return failures, diffs, outputs, and partial-credit details in `info`; a bare
+float gives the proposer little direction. For stochastic systems, average
+multiple samples inside the evaluator and include the sample diagnostics.
+
+The public launcher is string-candidate-first:
+
+```python
+from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
+
+result = optimize_anything(
+    seed_candidate="candidate text",
+    evaluator=evaluate,
+    dataset=dataset,
+    valset=valset,
+    test_set=test_set,
+    objective="Improve the candidate against the evaluator.",
+    config=OptimizeAnythingConfig(
+        engine="gepa",
+        max_evals=100,
+        run_dir="external-runs/example",
+        output_dir="external-runs/example/output",
+    ),
+)
 ```
 
 Use the data arguments as follows:
@@ -106,93 +135,89 @@ Use the data arguments as follows:
 | Input | Role |
 | --- | --- |
 | `dataset` | Examples used for multi-task optimization. |
-| `valset` | Selection/generalization examples; keep it representative. |
+| `valset` | Representative selection/generalization examples. |
 | `test_set` | Sealed, reporting-only examples for the final score. |
 
-Return failures, diffs, outputs, and partial-credit details in `info`; a bare
-float gives the proposer little direction. For stochastic systems, average
-multiple samples inside the evaluator and include the sample diagnostics.
+The `test_set` score is available in the result metadata. Report it separately
+from the selection score so the final number remains an honest held-out
+measurement.
 
 See the [API reference](skills/gepa-omni-skill/references/api.md) and
 [evaluator guide](skills/gepa-omni-skill/references/writing_evaluators.md) for
 the complete launcher contract.
 
-## Engine choices
+## Engines and backends
 
-| Engine | Behavior | Default local runtime |
+| Engine | Search behavior | Local runtime |
 | --- | --- | --- |
-| `gepa` | Reflective evolutionary search using evaluator feedback. | Read-only `CodexAgentProposer`; select Pi explicitly. |
-| `autoresearch` | Long-horizon experiment loop with Ralph-style continuation. | Writable Codex runner; Pi/Claude are explicit alternatives. |
-| `meta_harness` | Proposes candidates while the framework evaluates and selects them. | Fresh ephemeral Codex session per iteration; Pi/Claude are explicit alternatives. |
-| `best_of_n` | Independent candidate sampling baseline. | No feedback or search history. |
+| `gepa` | Reflects on evaluator feedback, mutates candidates, and keeps a Pareto frontier. | Read-only `CodexAgentProposer`; use Pi explicitly when needed. |
+| `autoresearch` | Runs a long-horizon experiment loop with Ralph-style continuation. | Codex by default; Pi and Claude are explicit alternatives. |
+| `meta_harness` | Proposes candidates while the framework evaluates and selects them. | Fresh Codex session per iteration by default; Pi and Claude are explicit alternatives. |
+| `best_of_n` | Samples independent candidates and keeps the best. | Baseline with no feedback or search history. |
 
-For a standalone run, pass one of the four engine names above and give it the
-full budget. For the normal portfolio workflow, omit the engine override and
-use the local `skills/gepa-omni-skill/scripts/omni_pipeline.py` helper.
+Omit the engine override for Omni. Select `gepa`, `autoresearch`,
+`meta_harness`, or `best_of_n` explicitly when comparing one engine, debugging,
+or working with a budget too small for four Omni phases.
 
-To choose the model explicitly in Omni, use one of these backend-specific
-parameters:
+The Omni helper accepts backend-specific model names:
 
 ```python
 run_omni(..., agent_backend="codex", codex_model="gpt-5-codex")
 run_omni(..., agent_backend="pi", pi_model="provider/model")
 ```
 
-Codex uses `codex_model`, then legacy `agent_model`, then the CLI default. Pi
-uses `pi_model`, then legacy `agent_model`, then its provider default. For GEPA,
-pass `gepa_parallel_proposals=(2, 2)` with a suitable `max_concurrency` to
-enable P×N sampling; omit it to retain sequential GEPA.
+For Codex, model selection is `codex_model`, then the legacy `agent_model`,
+then the authenticated CLI default. For Pi, it is `pi_model`, then
+`agent_model`, then the provider default. Claude is available only when
+explicitly selected with `agent_backend="claude"` for the agentic engines.
 
-## Requirements
+For GEPA P×N proposal sampling, pass
+`gepa_parallel_proposals=(parents, mutations)` with a suitable
+`max_concurrency`. Omitting it retains the sequential one-worker configuration.
+
+## Requirements and runtime boundaries
 
 - Python 3.10 or newer.
 - [`uv`](https://docs.astral.sh/uv/) for repository development.
 - An engine-capable `gepa[full]` environment supplied by the consumer. GEPA is
   intentionally not vendored or declared as a root dependency.
-- An authenticated `codex` CLI for the default backend. Select an authenticated
-  Pi or Claude CLI explicitly when needed.
-- For Codex runs with `max_token_cost`, both input and output USD-per-million
+- An authenticated CLI for the selected agent backend. Codex is the default.
+- When using Codex with `max_token_cost`, both input and output USD-per-million
   token rates.
-- For sandboxed Pi runs, the OS sandbox prerequisites described in
-  [`references/pi.md`](skills/gepa-omni-skill/references/pi.md).
+- For sandboxed Pi runs, `bwrap` on Linux or `sandbox-exec` on macOS. Agent
+  engines also require `jq` and `curl`.
 
-Supply the maintained engine fork explicitly when required by the consumer
-environment:
+The maintained GEPA fork is deployment configuration rather than a dependency
+of this repository. Supply its pinned URL and commit in the consuming
+environment, for example:
 
 ```bash
 export GEPA_OMNI_SPEC='gepa[full] @ git+https://<maintained-gepa-fork>/<org>/<repo>.git@<commit>'
 uv run --project . --with "$GEPA_OMNI_SPEC" \
   python3 skills/gepa-omni-skill/scripts/preflight.py \
-  --engine omni --agent-backend codex \
+  --engine omni \
+  --agent-backend codex \
   --max-token-cost 5 \
   --codex-input-cost-per-million 2 \
   --codex-output-cost-per-million 8
 ```
 
-## Preflight and diagnostics
-
-Run the extended preflight before a live optimization. It checks the launcher,
-engine registry, proposer/runner surface, credentials, and relevant sandbox
-prerequisites. It does not make model calls unless `--test-lm` is supplied.
+Run preflight before a live optimization. It checks imports, engine support,
+credentials, agent runners, and sandbox prerequisites; it does not make model
+calls unless `--test-lm` is supplied:
 
 ```bash
 python3 skills/gepa-omni-skill/scripts/preflight.py --engine gepa
 python3 skills/gepa-omni-skill/scripts/preflight.py --engine omni
 python3 skills/gepa-omni-skill/scripts/preflight.py \
-  --engine omni --agent-backend pi
+  --engine omni \
+  --agent-backend pi
 ```
 
-The read-only GEPA proposer stores each proposal's inputs, schema, response,
-usage, standard output/error, and validation errors. Writable agent engines use
-an external workspace and retain their command, session, JSONL output, usage,
-completion state, and cost estimate. Configure `run_dir` and `output_dir`
-outside this checkout so agent workspaces and diagnostics cannot modify the
-plugin source.
-
-Codex proposal processes use `--sandbox read-only`. Codex-backed AutoResearch
-and Meta-Harness use `--sandbox workspace-write` in their external workspaces;
-this is not unrestricted host access, and `sandbox=False` is rejected. Pi has
-no silent unsandboxed fallback.
+The read-only GEPA proposer runs in an external proposal directory. Codex-backed
+AutoResearch and Meta-Harness use `--sandbox workspace-write` in their external
+agent workspaces. `sandbox=False` is rejected, and Pi has no silent unsandboxed
+fallback.
 
 ## Repository layout
 
@@ -200,67 +225,57 @@ no silent unsandboxed fallback.
 | --- | --- |
 | `plugin.json` | Portable Agent Plugins 1.0 manifest. |
 | `.codex-plugin/plugin.json` | OpenAI/Codex compatibility manifest. |
-| `skills/gepa-omni-skill/SKILL.md` | The shipped portable skill and default workflow. |
+| `.agents/plugins/marketplace.json` | Codex marketplace metadata. |
+| `skills/gepa-omni-skill/SKILL.md` | Shipped skill and default workflow. |
 | `skills/gepa-omni-skill/references/` | API, Omni, evaluator, backend, tracking, and gotcha guides. |
-| `skills/gepa-omni-skill/scripts/` | Codex/Pi proposers, Omni composition, preflight, and self-evaluation entrypoints. |
+| `skills/gepa-omni-skill/scripts/` | Proposers, Omni composition, preflight, runtime guards, and self-evaluation entrypoints. |
 | `tests/` and `tools/test_*.py` | Deterministic contract, proposer, pipeline, preflight, staging, and harness tests. |
 | `tools/` | Development-only staging and bounded self-evaluation helpers; not shipped. |
-| `LICENSE` | MIT license text; included in the runtime payload. |
+| `LICENSE` | MIT license text included in runtime payloads. |
 
 ## Development and packaging
 
-Install the development dependencies and run the local checks:
+Install the development dependencies and run the same checks as CI:
 
 ```bash
 uv sync --project . --group dev
 uv run pytest -q
-uv run ruff check . --select C901
+uv run ruff check .
+uv run ruff format --check .
 git diff --check
 ```
 
-The development checkout contains tests and tooling that are not part of the
-installed plugin. Stage the portable runtime payload into an empty external
-directory whose final name is `gepa-omni`:
+Stage the runtime payload when packaging changes:
 
 ```bash
-stage_parent="$(mktemp -d)"
+portable_stage_parent="$(mktemp -d)"
 python3 tools/stage_plugin.py \
   --format portable \
-  --output "$stage_parent/gepa-omni"
-```
+  --output "$portable_stage_parent/gepa-omni"
 
-The portable staged payload must contain only `plugin.json`, `skills/`, and
-`LICENSE`. To stage the OpenAI/Codex compatibility export instead, use:
-
-```bash
+codex_stage_parent="$(mktemp -d)"
 python3 tools/stage_plugin.py \
   --format codex \
-  --output "$stage_parent/gepa-omni"
+  --output "$codex_stage_parent/gepa-omni"
 ```
 
-The Codex staged payload contains only `.codex-plugin/`, `skills/`, and
-`LICENSE`; install it through the configured Codex marketplace using the plugin
-ID `gepa-omni`.
+Staging copies only tracked runtime files. Keep proposal artifacts, evaluation
+runs, credentials, `.plugin-eval/` data, and generated Python caches out of Git.
 
-Keep proposal artifacts, evaluation runs, credentials, `.plugin-eval/` data,
-and generated Python caches out of Git. When packaging or runtime behavior
-changes, also run the relevant preflight and staging checks.
+## Further reading
 
-## Current static analysis
-
-On 2026-08-05, `plugin-eval analyze . --format markdown` reported **86/100
-(B)** with medium risk, no failing checks, three warnings, and no observed
-usage data. The warning signals were:
-
-- the intentional repository-slug (`fleet-gepa-omni`) versus package-ID
-  (`gepa-omni`) difference;
-- a large static deferred-token estimate across the skill's supporting guidance;
-- a heuristic high-complexity Python finding in the development/runtime helper
-  surface. The configured Ruff C901 check passes, so this is a follow-up signal
-  rather than a current lint failure.
-
-The score is a static snapshot, not a benchmark of real task outcomes. Rerun
-the analysis after changing the skill, references, or packaging.
+- [API reference](skills/gepa-omni-skill/references/api.md) — launcher contract,
+  modes, budgets, engines, and result metadata.
+- [Omni workflow](skills/gepa-omni-skill/references/omni.md) — phase boundaries,
+  budget partitioning, model selection, and standalone overrides.
+- [Evaluator guide](skills/gepa-omni-skill/references/writing_evaluators.md) —
+  feedback-rich evaluators, judges, batching, and stochastic scoring.
+- [Codex runtime](skills/gepa-omni-skill/references/codex.md) — proposer
+  isolation, diagnostics, and workspace behavior.
+- [Pi runtime](skills/gepa-omni-skill/references/pi.md) — explicit Pi backend
+  behavior and OS sandbox prerequisites.
+- [Gotchas](skills/gepa-omni-skill/references/gotchas.md) — reward hacking,
+  selection bias, budgets, stop conditions, and runtime prerequisites.
 
 ## License
 
