@@ -19,7 +19,7 @@ sys.path.insert(0, str(PROPOSER_DIR))
 
 import gepa_self_evaluate as self_evaluate_module  # noqa: E402
 import codex_agent_proposer as proposer_module  # noqa: E402
-from codex_agent_proposer import CodexAgentProposer, CodexProcessError  # noqa: E402
+from codex_agent_proposer import CodexAgentProposer  # noqa: E402
 
 
 class SelfEvaluateTests(unittest.TestCase):
@@ -30,38 +30,13 @@ class SelfEvaluateTests(unittest.TestCase):
                 plugin_eval_command=["node", "plugin-eval.js"],
             )
 
-    def test_prompt_and_extracted_helpers_keep_contract(self) -> None:
-        prompt = CodexAgentProposer._prompt(["prompt", "rubric"])
-        for required in (
-            "candidate.json",
-            "reflective_dataset.json",
-            "new_texts",
-            "read-only sandbox",
-            "Do not return Markdown fences",
-        ):
-            self.assertIn(required, prompt)
-        self.assertIn(
-            'The requested component names are exactly ["prompt", "rubric"]',
-            prompt,
-        )
-        self.assertNotIn("\\n", prompt)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            proposal_dir = Path(temp_dir)
-            output_path = proposal_dir / "codex_result.json"
-            output_path.write_text(json.dumps({"new_texts": {"prompt": "new"}}), encoding="utf-8")
-            proposer = CodexAgentProposer(proposal_dir)
-            self.assertEqual(
-                proposer._parse_candidate_response(output_path, "", ["prompt"], proposal_dir),
-                {"prompt": "new"},
-            )
-            with patch.object(
-                proposer_module.subprocess,
-                "Popen",
-                side_effect=OSError("unavailable"),
-            ):
-                with self.assertRaises(CodexProcessError):
-                    proposer._start_process([], proposal_dir)
+    def test_chat_proposer_schema_and_prompt_contract(self) -> None:
+        schema = CodexAgentProposer._schema(["prompt", "rubric"])
+        self.assertEqual(schema["required"], ["new_texts", "summary"])
+        self.assertEqual(schema["properties"]["new_texts"]["required"], ["prompt", "rubric"])
+        self.assertIn("JSON object", proposer_module._PROMPT_TEMPLATE)
+        self.assertIn("new_texts", proposer_module._PROMPT_TEMPLATE)
+        self.assertNotIn("codex exec", proposer_module._PROMPT_TEMPLATE)
 
     def _result(self, command: list[str], returncode: int = 0) -> self_evaluate_module.CommandResult:
         return self_evaluate_module.CommandResult(tuple(command), returncode, "", "")
@@ -197,7 +172,7 @@ class SelfEvaluateTests(unittest.TestCase):
         gepa_package = ModuleType("gepa")
         gepa_optimize = ModuleType("gepa.optimize_anything")
         gepa_optimize.EngineConfig = FakeConfig
-        gepa_optimize.OptimizeAnythingConfig = FakeConfig
+        gepa_optimize.GEPAConfig = FakeConfig
         gepa_optimize.ReflectionConfig = FakeConfig
         gepa_optimize.optimize_anything = fake_optimize
         gepa_package.optimize_anything = gepa_optimize
@@ -248,17 +223,17 @@ class SelfEvaluateTests(unittest.TestCase):
             all(call.kwargs["allow_candidate_execution"] for call in evaluate_candidate_mock.call_args_list)
         )
         config = captured["config"]
-        self.assertEqual(config.kwargs["engine"], "gepa")
-        self.assertEqual(config.kwargs["max_evals"], 6)
-        self.assertEqual(config.kwargs["stop_at_score"], 1.0)
-        self.assertIn("reflection", config.kwargs["engine_config"])
+        self.assertEqual(config.kwargs["engine"].kwargs["max_metric_calls"], 6)
+        self.assertEqual(config.kwargs["engine"].kwargs["max_candidate_proposals"], 1)
+        self.assertEqual(config.kwargs["reflection"].kwargs["module_selector"], "all")
+        self.assertIsNotNone(config.kwargs["stop_callbacks"])
         self.assertEqual(
             captured["seed_candidate"],
             {self_evaluate_module.COMPONENT: seed},
         )
         self.assertEqual(captured["dataset"], [{"phase": "training"}])
         self.assertEqual(captured["valset"], [{"phase": "validation"}])
-        self.assertEqual(captured["test_set"], [{"phase": "held-out"}])
+        self.assertNotIn("test_set", captured)
 
     def test_run_directory_must_be_external(self) -> None:
         with self.assertRaises(ValueError):

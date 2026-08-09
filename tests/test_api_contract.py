@@ -6,80 +6,98 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = PROJECT_ROOT / "skills" / "gepa-omni-skill"
+REFERENCE_ROOT = SKILL_ROOT / "references"
 
 
 class ApiContractDocumentationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        cls.readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+        cls.contributing = (PROJECT_ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
         cls.skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-        cls.api = (SKILL_ROOT / "references" / "api.md").read_text(encoding="utf-8")
-        cls.omni = (SKILL_ROOT / "references" / "omni.md").read_text(encoding="utf-8")
-        cls.codex = (SKILL_ROOT / "references" / "codex.md").read_text(encoding="utf-8")
-        cls.gotchas = (SKILL_ROOT / "references" / "gotchas.md").read_text(encoding="utf-8")
+        cls.api = (REFERENCE_ROOT / "api.md").read_text(encoding="utf-8")
+        cls.codex = (REFERENCE_ROOT / "codex.md").read_text(encoding="utf-8")
+        cls.pi = (REFERENCE_ROOT / "pi.md").read_text(encoding="utf-8")
+        cls.omni = (REFERENCE_ROOT / "omni.md").read_text(encoding="utf-8")
+        cls.gotchas = (REFERENCE_ROOT / "gotchas.md").read_text(encoding="utf-8")
+        cls.preflight = (SKILL_ROOT / "scripts" / "preflight.py").read_text(encoding="utf-8")
+        cls.notice = (SKILL_ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
 
-    def test_public_launcher_is_string_first(self) -> None:
-        self.assertIn("seed_candidate: str | None = None", self.api)
-        self.assertIn("`seed_candidate` is a **single string**", self.api)
-        self.assertIn("compatibility extension", self.api)
-        self.assertNotIn("seed_candidate: str | dict[str, str]", self.api)
-        self.assertIn("seed_candidate=SEED_PROMPT", self.api)
+    def test_stale_external_source_install_guidance_is_absent(self) -> None:
+        documents = (
+            self.readme,
+            self.contributing,
+            self.skill,
+            self.api,
+            self.codex,
+            self.pi,
+            self.omni,
+            self.gotchas,
+            self.preflight,
+        )
+        for document in documents:
+            lowered = document.lower()
+            stale_tokens = ("z" + "ochory", "source" + "-install", "source" + "-only", "source" + "-backed")
+            for stale in stale_tokens:
+                self.assertNotIn(stale, lowered)
 
-    def test_dataset_valset_and_test_set_roles_are_distinct(self) -> None:
-        for expected in (
-            "Single-task",
-            "Multi-task",
-            "Generalization",
-            "Optimize on `dataset`, select on `valset`",
-            "`test_set` is separate from the modes and is reporting-only",
-            "result.metadata[\"test_score\"]",
+    def test_pypi_and_native_engine_boundary_is_documented(self) -> None:
+        combined = "\n".join((self.readme, self.skill, self.api, self.omni))
+        for document in (self.readme, self.skill, self.api, self.omni):
+            self.assertIn("gepa==0.1.4", document)
+        for expected in ("autoresearch", "meta_harness", "best_of_n", "plugin-native"):
+            self.assertIn(expected, combined)
+        self.assertIn("standalone reflective", self.readme.lower())
+        self.assertIn("Published PyPI", self.api)
+
+    def test_direct_pypi_configuration_and_heldout_boundary_are_documented(self) -> None:
+        self.assertIn("GEPAConfig", self.api)
+        self.assertIn("EngineConfig.max_metric_calls", self.api)
+        self.assertIn("ReflectionConfig", self.api)
+        self.assertIn("stop_callbacks", self.api)
+        self.assertIn("no `test_set` parameter", self.api)
+        self.assertIn('task["test_set"]', self.api)
+        self.assertNotIn("OptimizeAnythingConfig", self.api)
+
+    def test_backend_parameters_and_chat_configuration_are_documented(self) -> None:
+        combined = "\n".join((self.readme, self.skill, self.api, self.codex, self.pi, self.omni))
+        for parameter in (
+            "agent_backend",
+            "agent_model",
+            "codex_model",
+            "pi_model",
+            "codex_command",
+            "pi_command",
+            "codex_input_cost_per_million",
+            "codex_output_cost_per_million",
+            "sandbox=True",
         ):
-            self.assertIn(expected, self.api)
+            self.assertIn(parameter, combined)
+        for variable in ("OPENAI_BASE_URL", "OPENAI_MODEL", "OPENAI_API_KEY"):
+            self.assertIn(variable, combined)
+            self.assertIn(variable, self.preflight)
+        self.assertIn("Chat Completions", combined)
+        self.assertNotIn("CLI authentication", self.preflight)
 
-    def test_budget_and_engine_semantics_are_documented(self) -> None:
+    def test_preflight_contract_mentions_chat_runtime_and_env_configuration(self) -> None:
         for expected in (
-            "max_evals",
-            "max_token_cost",
-            "stop_at_score",
-            "15–20 × len(valset)",
-            "engine_config` is strict",
-            "`best_of_n`",
-            "baseline",
-            "optimize_adaptive_sequential",
+            "OPENAI_BASE_URL",
+            "OPENAI_MODEL",
+            "OPENAI_API_KEY",
+            "Chat Completions",
+            "native_omni",
         ):
-            self.assertIn(expected, self.api)
-        for expected in (
-            "reward hacking",
-            "selection bias",
-            "stochastic",
-            "saturated",
-            "engine_config",
-            "stop_at_score",
-        ):
-            self.assertIn(expected, self.skill.lower() + self.api.lower() + self.gotchas.lower())
+            self.assertIn(expected, self.preflight)
 
-    def test_codex_and_pi_extensions_keep_the_component_contract(self) -> None:
-        for document in (self.skill, self.api, self.codex):
-            self.assertIn("dict[str, str]", document)
-            self.assertIn("components_to_update", document)
-        self.assertIn("The public `optimize_anything` launcher is string-candidate-first", self.codex)
-        self.assertIn("CodexAgentProposer", self.skill)
-        self.assertIn("PiAgentProposer", self.skill)
+    def test_mit_provenance_is_pinned_and_packaged(self) -> None:
+        self.assertIn("MIT", self.notice)
+        self.assertIn("8a2bed96385202f69caaeb5327a843ed2f5ea225", self.notice)
+        self.assertIn("native_omni/core.py", self.notice)
+        self.assertIn("native_omni/runners.py", self.notice)
+        self.assertIn("THIRD_PARTY_NOTICES.md", self.readme)
 
-    def test_omni_is_default_and_standalone_engines_are_explicit(self) -> None:
-        for expected in (
-            "Phase 1: optimize_best_of (parallel)",
-            "Phase 2: fresh optimize_anything",
-            "continuation_engine=\"autoresearch\"",
-            "test_set` out of all three Phase 1 calls",
-            "explicit `engine=\"gepa\"",
-        ):
-            self.assertIn(expected, self.omni)
-        self.assertIn("Use Omni by default", self.skill)
-        self.assertIn("fresh Phase 2 continuation", self.api)
-
-    def test_upstream_baseline_is_recorded(self) -> None:
-        self.assertIn("ba30ee24e8f63dfdb9e557ed8cfaaec7aa09a6df", self.skill)
-        self.assertIn("ba30ee24e8f63dfdb9e557ed8cfaaec7aa09a6df", self.api)
+    def test_upstream_semantic_baseline_remains_recorded(self) -> None:
+        self.assertIn("8a2bed96385202f69caaeb5327a843ed2f5ea225", self.skill)
 
 
 if __name__ == "__main__":

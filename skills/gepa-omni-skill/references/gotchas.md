@@ -26,46 +26,42 @@ temperature-bearing model, that is a single-sample estimate. Average multiple
 samples inside `evaluate` and return the sample details in `info`; budget for
 the extra calls.
 
-## 4. Candidate shape is string-first
+## 4. Candidate shape depends on the boundary
 
-The high-level `optimize_anything` launcher accepts a single string candidate.
-Do not pass a dictionary when comparing engines or composing pipelines. Named
-dictionary components belong to the lower-level GEPA launcher. This plugin's
-Codex/Pi custom proposer still returns `dict[str, str]`, and its development
-self-evaluation harness may use a one-component mapping only when the pinned
-fork's custom-proposer bridge requires it.
+Direct PyPI `optimize_anything()` accepts a string, a named component mapping,
+or `None`. The plugin wrapper `run_optimization()` accepts a string seed;
+custom proposers return `dict[str, str]` at their separate component boundary.
 
 ## 5. The default budget may be too small
 
-`max_evals` defaults to 100, but it is a cap on evaluation calls, not a count
+For direct PyPI GEPA, `EngineConfig.max_metric_calls` is a cap on evaluation calls, not a count
 of meaningful proposal rounds. For the `gepa` backend, size it roughly as:
 
 ```text
-generalization: 15–20 × len(valset)
-multi-task:      15–20 × len(dataset)
-single-task:     15–20
+generalization: max_metric_calls ≳ 15–20 × len(valset)
+multi-task:      max_metric_calls ≳ 15–20 × len(dataset)
+single-task:     max_metric_calls ≳ 15–20
 ```
 
 Every candidate is scored on the full selection set. If a run stops after one
-proposal, increase the budget. `max_token_cost` separately limits proposer or
-agent-model spend, and a wall-clock timeout should be used as a process
-backstop for long agent runs.
+proposal, increase the budget. PyPI config uses
+`EngineConfig.max_reflection_cost` for reflection spend; the plugin-native Omni
+wrapper separately accepts `max_token_cost`.
 
 ## 6. Give every run a real stop condition
 
-Use `stop_at_score` whenever the metric has a known ceiling such as accuracy
-or pass rate. Use `max_token_cost` for agentic engines. If evaluation caching
-is enabled, `max_evals` counts cache misses, so a converged run can continue
+Use `GEPAConfig.stop_callbacks` whenever the metric has a known ceiling such
+as accuracy or pass rate. If evaluation caching is enabled,
+`max_metric_calls` counts cache misses, so a converged run can continue
 proposing without consuming evaluation budget; a score stop, token cap, and
-process timeout then become essential. If both `max_evals` and
-`max_token_cost` are `None`, the run is unbounded apart from a warning.
+process timeout then become essential.
 
-## 7. `engine_config` is strict
+## 7. PyPI configuration is nested and strict
 
-Each backend parses `engine_config` into its own typed configuration. An
-unknown, misspelled, or stale key raises `TypeError` at construction. Changing
-`engine=` means replacing the engine configuration too; do not carry GEPA
-reflection keys into AutoResearch, Meta-Harness, or best-of-N.
+PyPI 0.1.4 uses `GEPAConfig(engine=EngineConfig(...),
+reflection=ReflectionConfig(...))`. An unknown, misspelled, or stale key
+raises `TypeError` at construction. It does not accept top-level `engine=`,
+`engine_config`, `max_evals`, `max_token_cost`, or `output_dir`.
 
 ## 8. Saturated signals return the seed
 
@@ -83,23 +79,23 @@ proposer can learn from them. If appropriate, configure
 `raise_on_exception=False` to convert exceptions to score `0.0`; do not hide
 unexpected failures behind a success-shaped result.
 
-## 10. Agent runtime prerequisites are hard requirements
+## 10. Chat Completions configuration is a hard requirement
 
-- The plugin defaults AutoResearch and Meta-Harness to `agent_backend="codex"`
-  through the maintained fork's writable Codex runner. Pi and Claude remain
-  explicit alternatives.
-- Codex always uses `--sandbox workspace-write` against the external engine
-  workspace and explicitly enables workspace-write network access for the local
-  evaluator. `sandbox=False` is rejected; there is no unrestricted fallback.
-- When `max_token_cost` is set for Codex, both input and output USD-per-million
-  token rates are required and validated before launch. Without a USD cap,
-  usage-only runs are allowed but cost is marked unknown when rates are absent.
-- Pi requires `jq` and `curl` for AutoResearch, plus `bwrap` on Linux or
-  `sandbox-exec` on macOS when `sandbox=True`.
-- Pi's `--tools` allowlist is not an OS security boundary. A missing OS
-  sandbox is a hard preflight failure; there is no silent unsandboxed fallback.
-- Do not conflate the read-only `CodexAgentProposer` used by `gepa` with the
-  writable fork `CodexAgentRunner` used by AutoResearch and Meta-Harness.
+- Every model call uses the OpenAI-compatible Chat Completions endpoint from
+  `OPENAI_BASE_URL`, `OPENAI_MODEL`, and `OPENAI_API_KEY`.
+- `agent_backend="codex"`, `"pi"`, or `"claude"` is retained as a runtime
+  compatibility label; it does not invoke a provider CLI.
+- When `max_token_cost` is set, both input and output USD-per-million token
+  rates are required and validated before launch. Without a USD cap, usage-only
+  runs are allowed but cost is marked unknown when rates are absent.
+- The model receives prompt text and materialized JSON, not local shell or
+  filesystem tools. Keep `run_dir` and `output_dir` outside the checkout for
+  diagnostics and evaluator workspaces.
+- `sandbox=False` remains a hard wrapper failure so callers cannot accidentally
+  disable the runtime safety boundary.
+- Do not conflate the read-only `CodexAgentProposer` used by PyPI `gepa` with
+  the native `OpenAIChatCompletionRunner` used by AutoResearch and Meta-Harness;
+  both use the same API boundary but have different lifecycle contracts.
 - Keep `run_dir` and `output_dir` outside the checkout when agents need a
   workspace or persistent diagnostics.
 
@@ -107,11 +103,13 @@ unexpected failures behind a success-shaped result.
 
 - [ ] The string-candidate API and selected optimization mode match the goal.
 - [ ] The evaluator returns a higher-is-better score and actionable feedback.
-- [ ] `dataset`, `valset`, and `test_set` have the intended roles.
+- [ ] Direct PyPI calls use only `dataset` and `valset`; wrapper-level
+      `task["test_set"]` is held-out post-run reporting.
 - [ ] The seed has failures the selected backend can learn from.
-- [ ] `max_evals` is sized for many proposal rounds.
-- [ ] `stop_at_score` and/or `max_token_cost` provide a real stop condition.
-- [ ] `engine_config` keys match the selected backend exactly.
+- [ ] `max_metric_calls` is sized for many proposal rounds.
+- [ ] PyPI stopping uses `stop_callbacks`; plugin-native Omni uses its explicit
+      budget controls.
+- [ ] A PyPI `GEPAConfig` uses only its nested typed fields.
 - [ ] The selected backend and proposer model have been tested with one call
       where live credentials are available.
 - [ ] Pi/Codex credentials and OS sandbox prerequisites are present for the

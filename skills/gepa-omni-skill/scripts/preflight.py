@@ -1,19 +1,12 @@
 #!/usr/bin/env python3
-"""Fail-fast checks for an engine-pluggable ``optimize_anything`` run.
+"""Fail-fast checks for GEPA and the plugin-native Omni engines.
 
-Examples::
-
-    python preflight.py --engine gepa
-    python preflight.py --engine codex
-    python preflight.py --engine autoresearch
-    python preflight.py --engine meta_harness
-    python preflight.py --engine omni
-    GEPA_REFLECTION_LM=anthropic/claude-sonnet-4-6 python preflight.py --test-lm
-
-The Codex proposer is an external adapter for the upstream ``gepa`` engine,
-while the maintained fork supplies the writable Codex runner for
-``autoresearch`` and ``meta_harness``. Claude and Pi remain explicit backend
-alternatives.
+The published ``gepa==0.1.4`` package supplies the standalone reflective
+engine. AutoResearch, Meta-Harness, Best-of-N, and the Omni composition use
+the checked-in ``native_omni`` runtime. All model calls use the same
+OpenAI-compatible Chat Completions endpoint configured by
+``OPENAI_BASE_URL``, ``OPENAI_MODEL``, and ``OPENAI_API_KEY``. This command
+does not make a model call unless ``--test-lm`` is explicitly requested.
 """
 
 from __future__ import annotations
@@ -22,26 +15,14 @@ import argparse
 import inspect
 import math
 import os
-import shutil
 import sys
 
 OK, BAD = "\033[32mOK\033[0m", "\033[31mFAIL\033[0m"
 problems: list[str] = []
 
 ENGINE_CHOICES = ("gepa", "best_of_n", "autoresearch", "meta_harness", "codex", "omni")
-BUILTIN_ENGINES = {"gepa", "best_of_n", "autoresearch", "meta_harness"}
-AGENT_ENGINES = ("autoresearch", "meta_harness")
-COMPOSITION_HELPERS = (
-    "optimize_best_of",
-    "optimize_sequential",
-    "optimize_parallel",
-    "optimize_vote",
-    "optimize_adaptive_sequential",
-)
-DEFAULT_LM_BY_ENGINE = {
-    "gepa": "openai/gpt-5.6-luna",
-    "best_of_n": "gpt-5.6-luna",
-}
+NATIVE_ENGINES = {"best_of_n", "autoresearch", "meta_harness"}
+PYPI_ENGINES = {"gepa", "codex", "omni"}
 
 
 def check(label: str, ok: bool, fix: str = "") -> None:
@@ -50,312 +31,132 @@ def check(label: str, ok: bool, fix: str = "") -> None:
         problems.append(f"{label} — {fix}" if fix else label)
 
 
-def _creds_for(lm: str) -> tuple[bool, str]:
-    """Best-effort provider-credential check for a LiteLLM model id."""
-    has_aws = bool(
-        os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
-        or os.environ.get("AWS_ACCESS_KEY_ID")
-        or os.environ.get("AWS_PROFILE")
+def _safe_detail(output: str, *, limit: int = 160) -> str:
+    """Return bounded non-secret command diagnostics."""
+    detail = " ".join(output.split())
+    return detail[:limit]
+
+
+def _check_chat_completions_config() -> bool:
+    """Validate the shared provider boundary without printing the API key."""
+    base_url = os.environ.get("OPENAI_BASE_URL", "").strip()
+    model = os.environ.get("OPENAI_MODEL", "").strip()
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    base_configured = bool(base_url)
+    model_configured = bool(model)
+    key_configured = bool(api_key)
+    check("OPENAI_BASE_URL is configured", base_configured, "export OPENAI_BASE_URL to an HTTP(S) API base URL")
+    check("OPENAI_MODEL is configured", model_configured, "export OPENAI_MODEL with the deployed model name")
+    check("OPENAI_API_KEY is configured", key_configured, "export OPENAI_API_KEY")
+    valid_scheme = base_url.startswith(("http://", "https://"))
+    check(
+        "OPENAI_BASE_URL uses HTTP(S)",
+        not base_url or valid_scheme,
+        "set OPENAI_BASE_URL to an http:// or https:// URL",
     )
-    if "bedrock" in lm:
-        return (
-            has_aws,
-            "export AWS creds (AWS_BEARER_TOKEN_BEDROCK / AWS_ACCESS_KEY_ID / AWS_PROFILE)",
-        )
-    if lm.startswith("openai/") or lm.startswith("gpt-") or "gpt-5" in lm:
-        return bool(os.environ.get("OPENAI_API_KEY")), "export OPENAI_API_KEY"
-    if "claude" in lm or lm.startswith("anthropic/"):
-        return bool(os.environ.get("ANTHROPIC_API_KEY")) or has_aws, ("export ANTHROPIC_API_KEY (or AWS creds)")
-    any_key = bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or has_aws)
-    return any_key, "export your LiteLLM provider's API key"
+    return base_configured and model_configured and key_configured and valid_scheme
 
 
-def _check_command(command: str, label: str, fix: str) -> None:
-    executable = shutil.which(command)
-    check(label, bool(executable), fix)
-    if executable:
-        print(f"      {command} -> {executable}")
-
-
-def _check_gepa_import() -> tuple[bool, set[str]]:
+def _check_gepa_surface() -> bool:
     try:
         import gepa
-        from gepa.optimize_anything import (  # noqa: F401
-            OptimizeAnythingConfig,
-            list_engines,
-            optimize_adaptive_sequential,
-            optimize_anything,
-            optimize_best_of,
-            optimize_parallel,
-            optimize_sequential,
-            optimize_vote,
-        )
+        from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
 
+        config_parameters = inspect.signature(GEPAConfig).parameters
+        engine_parameters = inspect.signature(EngineConfig).parameters
+        hook_available = hasattr(ReflectionConfig, "custom_candidate_proposer")
+        api_ok = {"engine", "reflection"}.issubset(config_parameters) and "max_metric_calls" in engine_parameters
         check(
-            f"import gepa ({getattr(gepa, '__version__', '?')}) + current launcher",
+            f"import gepa ({getattr(gepa, '__version__', '?')}) published API",
             True,
+            "install gepa[full]==0.1.4",
         )
-        available = set(list_engines())
-        missing = sorted(BUILTIN_ENGINES - available)
         check(
-            "engine registry exposes GEPA, best_of_n, autoresearch, and meta_harness",
+            "GEPAConfig exposes nested EngineConfig and ReflectionConfig",
+            api_ok,
+            "install gepa[full]==0.1.4 and refresh the environment",
+        )
+        check(
+            "ReflectionConfig exposes custom_candidate_proposer",
+            hook_available,
+            "install gepa[full]==0.1.4 and refresh the environment",
+        )
+        check("gepa.optimize_anything is callable", callable(optimize_anything), "refresh the GEPA installation")
+        return api_ok and hook_available and callable(optimize_anything)
+    except Exception as exc:
+        check("import gepa published API", False, "install gepa[full]==0.1.4, then rerun preflight")
+        print(f"      {_safe_detail(str(exc))}")
+        return False
+
+
+def _native_surface(engine: str) -> bool:
+    try:
+        import native_omni
+
+        required = {
+            "BudgetTracker",
+            "EvalServer",
+            "Task",
+            "Result",
+            "normalize_evaluator",
+            "normalize_batch_evaluator",
+        }
+        missing = sorted(name for name in required if not hasattr(native_omni, name))
+        check(
+            f"plugin-native runtime exposes task/evaluation primitives for {engine}",
             not missing,
-            f"install the pinned maintained engine-capable `gepa[full]` fork; missing: {', '.join(missing)}",
+            f"restore native_omni exports: {', '.join(missing)}",
         )
-        print(f"      engines -> {', '.join(sorted(available)) or '(none)'}")
-        check(
-            "current launcher exposes composition helpers: " + ", ".join(COMPOSITION_HELPERS),
-            True,
-        )
-        return True, available
+        return not missing
     except Exception as exc:
         check(
-            "import current optimize_anything API",
-            False,
-            "install the pinned maintained engine-capable `gepa[full]` fork, with OptimizeAnythingConfig",
-        )
-        print(f"      {exc}")
-        return False, set()
-
-
-def _check_engine_available(engine: str, available: set[str]) -> None:
-    required = "gepa" if engine in {"codex", "omni"} else engine
-    check(
-        f"requested engine `{required}` is available",
-        required in available,
-        "install the pinned maintained engine-capable `gepa[full]` fork, then rerun preflight",
-    )
-
-
-def _required_agent_tools(
-    engine: str,
-    backend: str,
-    pi_command: str,
-    codex_command: str,
-) -> tuple[str, ...]:
-    runner = {"codex": codex_command, "pi": pi_command}.get(backend, "claude")
-    required = [runner]
-    if engine in AGENT_ENGINES:
-        required.extend(("jq", "curl"))
-    return tuple(required)
-
-
-def _check_pi_sandbox_tool() -> None:
-    executable = shutil.which("sandbox-exec") or (
-        "/usr/bin/sandbox-exec" if os.path.exists("/usr/bin/sandbox-exec") else None
-    )
-    check(
-        "`sandbox-exec` on PATH (sandbox=True provides Pi OS confinement)",
-        bool(executable),
-        "macOS Seatbelt is required for sandboxed Pi runs; no unsandboxed fallback is used",
-    )
-    if executable:
-        print(f"      sandbox-exec -> {executable}")
-
-
-def _check_agent_tools(
-    engine: str,
-    backend: str,
-    pi_command: str = "pi",
-    codex_command: str = "codex",
-) -> None:
-    for tool in _required_agent_tools(engine, backend, pi_command, codex_command):
-        _check_command(
-            tool,
-            f"`{tool}` on PATH (required by {engine}/{backend})",
-            f"install and authenticate `{tool}` before a live {engine} run",
-        )
-    if backend == "codex":
-        return
-    if sys.platform.startswith("linux"):
-        _check_command(
-            "bwrap",
-            "`bwrap` on PATH (sandbox=True provides Pi OS confinement)"
-            if backend == "pi"
-            else "`bwrap` on PATH (default sandbox=True jails Claude)",
-            (
-                "install bubblewrap; Pi will not silently run unsandboxed"
-                if backend == "pi"
-                else "install bubblewrap; unsandboxed agent execution is not supported"
-            ),
-        )
-    elif backend == "pi":
-        _check_pi_sandbox_tool()
-
-
-def _check_pi_surface(gepa_available: bool) -> None:
-    if not gepa_available:
-        return
-    try:
-        from gepa.oa.agent_runner import PiAgentRunner
-        from gepa.oa.sandbox import pi_sandbox_prefix
-
-        check(
-            "GEPA fork exposes PiAgentRunner",
-            callable(PiAgentRunner),
-            "install the maintained GEPA fork",
-        )
-        check(
-            "GEPA fork exposes pi_sandbox_prefix",
-            callable(pi_sandbox_prefix),
-            "install the maintained GEPA fork with Pi OS sandbox support",
-        )
-    except Exception as exc:
-        check(
-            "GEPA fork exposes the Pi agent-runner extension",
-            False,
-            (
-                "install the maintained engine-capable GEPA fork; upstream PyPI "
-                "releases without the extension are unsupported"
-            ),
-        )
-        print(f"      {exc}")
-
-    try:
-        from pi_agent_proposer import PiAgentProposer
-
-        constructor = inspect.signature(PiAgentProposer)
-        call = inspect.signature(PiAgentProposer.__call__)
-        check(
-            "PiAgentProposer constructor contract",
-            {"run_dir", "model", "timeout_seconds", "pi_command", "sandbox"}.issubset(constructor.parameters),
-            "refresh the plugin Pi proposer script",
-        )
-        check(
-            "PiAgentProposer GEPA callable contract",
-            {
-                "candidate",
-                "reflective_dataset",
-                "components_to_update",
-                "metadata",
-            }.issubset(call.parameters),
-            "refresh the plugin Pi proposer script",
-        )
-    except Exception as exc:
-        check(
-            "PiAgentProposer import and contract",
+            f"plugin-native runtime imports for {engine}",
             False,
             "keep the skill scripts directory on PYTHONPATH",
         )
-        print(f"      {exc}")
+        print(f"      {_safe_detail(str(exc))}")
+        return False
 
 
-def _check_codex_runner_surface(gepa_available: bool) -> None:
-    if not gepa_available:
-        return
+def _check_native_runner(backend: str) -> bool:
     try:
-        from gepa.oa.agent_runner import CodexAgentRunner
+        from native_omni import OpenAIChatCompletionRunner
 
-        constructor = inspect.signature(CodexAgentRunner)
         check(
-            "GEPA fork exposes CodexAgentRunner",
-            callable(CodexAgentRunner),
-            "install the maintained GEPA fork with the Codex runner extension",
+            f"plugin-native {backend} uses the shared Chat Completions runner",
+            callable(OpenAIChatCompletionRunner),
+            "refresh the checked-in native_omni runtime",
         )
-        check(
-            "CodexAgentRunner exposes workspace-write and session controls",
-            {"persistent", "sandbox", "input_cost_per_million", "output_cost_per_million"}.issubset(
-                constructor.parameters
-            ),
-            "refresh the maintained GEPA fork",
-        )
+        return callable(OpenAIChatCompletionRunner)
     except Exception as exc:
         check(
-            "GEPA fork exposes the Codex agent-runner extension",
+            f"plugin-native {backend} runner is importable",
             False,
-            (
-                "install the maintained engine-capable GEPA fork; upstream PyPI "
-                "releases without CodexAgentRunner are unsupported"
-            ),
+            "refresh the checked-in native_omni runtime",
         )
-        print(f"      {exc}")
+        print(f"      {_safe_detail(str(exc))}")
+        return False
 
 
-def _check_codex_cli(codex_command: str) -> None:
-    _check_command(
-        codex_command,
-        f"`{codex_command}` CLI on PATH (used by the GEPA proposer)",
-        f"install and authenticate the Codex CLI at {codex_command!r}",
-    )
-
-
-def _check_codex_proposer_surface() -> None:
+def _check_codex_proposer_surface() -> bool:
     try:
         from codex_agent_proposer import CodexAgentProposer
 
         constructor = inspect.signature(CodexAgentProposer)
         call = inspect.signature(CodexAgentProposer.__call__)
-        required_constructor = {"run_dir", "model", "timeout_seconds"}
-        required_call = {"candidate", "reflective_dataset", "components_to_update"}
-        constructor_ok = required_constructor.issubset(constructor.parameters)
-        call_ok = required_call.issubset(call.parameters) and "metadata" in call.parameters
-        check(
-            "CodexAgentProposer constructor contract",
-            constructor_ok,
-            "refresh the plugin proposer script",
-        )
-        check(
-            "CodexAgentProposer GEPA callable contract",
-            call_ok,
-            "refresh the plugin proposer script",
-        )
+        constructor_ok = {"run_dir", "model", "timeout_seconds"}.issubset(constructor.parameters)
+        call_ok = {"candidate", "reflective_dataset", "components_to_update", "metadata"}.issubset(call.parameters)
+        check("CodexAgentProposer constructor contract", constructor_ok, "refresh the plugin proposer script")
+        check("CodexAgentProposer callable contract", call_ok, "refresh the plugin proposer script")
+        return constructor_ok and call_ok
     except Exception as exc:
         check(
             "CodexAgentProposer import and contract",
             False,
             "keep the skill scripts directory on PYTHONPATH",
         )
-        print(f"      {exc}")
-
-
-def _check_codex_engine_surface() -> None:
-    try:
-        from gepa.optimize_anything import (
-            OptimizeAnythingConfig,
-            ReflectionConfig,
-        )
-
-        supports_hook = hasattr(ReflectionConfig, "custom_candidate_proposer")
-        config_parameters = inspect.signature(OptimizeAnythingConfig).parameters
-        supports_engine_config = {"engine", "engine_config"}.issubset(config_parameters)
-        check(
-            "installed GEPA exposes ReflectionConfig.custom_candidate_proposer",
-            supports_hook,
-            "upgrade the external gepa[full] dependency",
-        )
-        check(
-            "OptimizeAnythingConfig exposes engine selection and engine_config",
-            supports_engine_config,
-            "upgrade the external gepa[full] dependency",
-        )
-    except Exception as exc:
-        check(
-            "GEPA proposer-hook compatibility",
-            False,
-            "upgrade the external gepa[full] dependency",
-        )
-        print(f"      {exc}")
-
-
-def _check_codex_compatibility(gepa_available: bool, codex_command: str = "codex") -> None:
-    _check_codex_cli(codex_command)
-    _check_codex_runner_surface(gepa_available)
-    _check_codex_proposer_surface()
-    if not gepa_available:
-        return
-    _check_codex_engine_surface()
-
-
-def _check_lm_credentials(engine: str, backend: str = "claude") -> str:
-    configured = os.environ.get("GEPA_REFLECTION_LM", "")
-    effective = configured or DEFAULT_LM_BY_ENGINE[engine]
-    if not configured and backend == "pi" and engine == "best_of_n":
-        effective = "openai/gpt-5.1"
-    if not configured:
-        print(f"      GEPA_REFLECTION_LM unset -> engine default '{effective}'")
-    ok, fix = _creds_for(effective)
-    check(f"LLM creds present for '{effective}'", ok, fix)
-    return effective
+        print(f"      {_safe_detail(str(exc))}")
+        return False
 
 
 def _is_valid_pricing_value(value: object) -> bool:
@@ -363,45 +164,55 @@ def _is_valid_pricing_value(value: object) -> bool:
         value is None
         or isinstance(value, (int, float))
         and not isinstance(value, bool)
-        and value >= 0
-        and math.isfinite(value)
+        and math.isfinite(float(value))
+        and float(value) >= 0
     )
 
 
-def _check_codex_pricing(args: argparse.Namespace) -> None:
-    if args.agent_backend != "codex":
-        return
-    input_rate = args.codex_input_cost_per_million
-    output_rate = args.codex_output_cost_per_million
-    max_token_cost = args.max_token_cost
-    values_valid = all(_is_valid_pricing_value(value) for value in (input_rate, output_rate, max_token_cost))
+def _check_chat_pricing(args: argparse.Namespace) -> None:
+    values = (
+        args.codex_input_cost_per_million,
+        args.codex_output_cost_per_million,
+        args.max_token_cost,
+    )
     check(
-        "Codex pricing values are finite and non-negative",
-        values_valid,
+        "Chat Completions pricing values are finite and non-negative",
+        all(_is_valid_pricing_value(value) for value in values),
         "use finite non-negative USD values",
     )
-    complete = input_rate is not None and output_rate is not None
-    if input_rate is not None or output_rate is not None or max_token_cost is not None:
+    complete = args.codex_input_cost_per_million is not None and args.codex_output_cost_per_million is not None
+    if any(value is not None for value in values):
         check(
-            "Codex input/output pricing is complete",
+            "Chat Completions input/output pricing is complete",
             complete,
-            "provide both --codex-input-cost-per-million and "
-            "--codex-output-cost-per-million when pricing or a token cap is configured",
+            "provide both input and output pricing rates",
         )
+
+
+def _check_agent_runtime(args: argparse.Namespace, engine: str) -> None:
+    _check_chat_completions_config()
+    _check_native_runner(args.agent_backend)
+    _check_chat_pricing(args)
+
+
+def _check_codex_proposer_runtime(args: argparse.Namespace, engine: str) -> None:
+    _check_chat_completions_config()
+    check("CodexAgentProposer uses the shared Chat Completions endpoint", True)
+    _check_chat_pricing(args)
 
 
 def _test_lm(target: str) -> None:
     try:
-        from gepa.lm import LM
+        from native_omni.chat_completions import OpenAIChatCompletionsClient
 
-        output = LM(target)("Reply with the single word: ok")
+        result = OpenAIChatCompletionsClient().complete([{"role": "user", "content": "Reply with the single word: ok"}])
         check(
-            f"LM 1-call round-trip ({target})",
-            bool(output),
-            "LM returned empty; check model id / creds / region",
+            f"Chat Completions 1-call round-trip ({target})",
+            bool(result.final_text),
+            "the endpoint returned empty content; check the model and credentials",
         )
     except Exception as exc:
-        check(f"LM 1-call round-trip ({target})", False, str(exc)[:160])
+        check(f"Chat Completions 1-call round-trip ({target})", False, _safe_detail(str(exc)))
 
 
 def _report() -> int:
@@ -417,95 +228,52 @@ def _report() -> int:
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--engine",
-        default="gepa",
-        choices=ENGINE_CHOICES,
-    )
-    parser.add_argument("--test-lm", action="store_true", help="make an opt-in 1-call LM round-trip")
+    parser.add_argument("--engine", default="gepa", choices=ENGINE_CHOICES)
+    parser.add_argument("--test-lm", action="store_true", help="make an opt-in 1-call Chat Completions round-trip")
     parser.add_argument(
         "--agent-backend",
         choices=("codex", "pi", "claude"),
         default="codex",
-        help="backend for autoresearch/meta_harness (default: codex)",
-    )
-    parser.add_argument("--pi-command", default="pi", help="Pi executable used by the pi backend")
-    parser.add_argument("--codex-command", default="codex", help="Codex executable used by the codex backend")
-    parser.add_argument(
-        "--codex-input-cost-per-million",
-        type=float,
-        default=None,
-        help="input-token USD rate for capped Codex runs",
+        help="backend for plugin-native agent engines (default: codex)",
     )
     parser.add_argument(
-        "--codex-output-cost-per-million",
-        type=float,
-        default=None,
-        help="output-token USD rate for capped Codex runs",
+        "--model", default=None, help="legacy display-only model override; OPENAI_MODEL is authoritative"
     )
-    parser.add_argument(
-        "--max-token-cost",
-        type=float,
-        default=None,
-        help="optional Codex USD cap to validate with the pricing rates",
-    )
+    parser.add_argument("--pi-command", default="pi", help="legacy compatibility option; no CLI is invoked")
+    parser.add_argument("--codex-command", default="codex", help="legacy compatibility option; no CLI is invoked")
+    parser.add_argument("--claude-command", default="claude", help="legacy compatibility option; no CLI is invoked")
+    parser.add_argument("--codex-input-cost-per-million", type=float, default=None)
+    parser.add_argument("--codex-output-cost-per-million", type=float, default=None)
+    parser.add_argument("--max-token-cost", type=float, default=None)
     return parser.parse_args(argv)
-
-
-def _check_agent_runtime(
-    args: argparse.Namespace,
-    gepa_available: bool,
-    engines: tuple[str, ...],
-) -> None:
-    for engine in engines:
-        _check_agent_tools(engine, args.agent_backend, args.pi_command, args.codex_command)
-    _check_codex_pricing(args)
-    surface_check = {
-        "pi": _check_pi_surface,
-        "codex": _check_codex_runner_surface,
-    }.get(args.agent_backend)
-    if surface_check:
-        surface_check(gepa_available)
-
-
-def _check_selected_runtime(args: argparse.Namespace, gepa_available: bool) -> None:
-    if args.engine == "codex":
-        _check_codex_compatibility(gepa_available, args.codex_command)
-        return
-    if args.engine in AGENT_ENGINES:
-        _check_agent_runtime(args, gepa_available, (args.engine,))
-        return
-    if args.engine == "omni":
-        _check_agent_runtime(args, gepa_available, AGENT_ENGINES)
-        if gepa_available:
-            _check_lm_credentials("gepa", args.agent_backend)
-            _check_lm_credentials("best_of_n", args.agent_backend)
-        return
-    if args.engine in {"gepa", "best_of_n"} and gepa_available:
-        target = _check_lm_credentials(args.engine)
-        if args.test_lm:
-            _test_lm(target)
 
 
 def main(argv: list[str] | None = None) -> int:
     problems.clear()
     args = _parse_args(argv)
-
     print("== optimize_anything preflight ==")
-    gepa_available, available = _check_gepa_import()
-    if gepa_available:
-        _check_engine_available(args.engine, available)
-    _check_selected_runtime(args, gepa_available)
-    if args.test_lm and args.engine in {
-        "codex",
-        "autoresearch",
-        "meta_harness",
-        "omni",
-    }:
-        print(
-            "      --test-lm only tests LiteLLM engines; use the separate live "
-            "Codex/Claude smoke test for agent engines"
-        )
+
+    if args.engine in PYPI_ENGINES:
+        gepa_ok = _check_gepa_surface()
+        if args.engine == "codex":
+            _check_codex_proposer_surface()
+            _check_codex_proposer_runtime(args, args.engine)
+        if args.engine == "gepa" and gepa_ok:
+            _check_codex_proposer_surface()
+            _check_codex_proposer_runtime(args, args.engine)
+
+    if args.engine in NATIVE_ENGINES:
+        _native_surface(args.engine)
+        _check_agent_runtime(args, args.engine)
+
+    if args.engine == "omni":
+        _native_surface("omni")
+        _check_agent_runtime(args, "omni")
+        _check_codex_proposer_surface()
+
+    if args.test_lm:
+        target = os.environ.get("OPENAI_MODEL") or args.model or "<OPENAI_MODEL>"
+        _test_lm(target)
     return _report()
 
 

@@ -11,9 +11,13 @@ description: >-
 # `optimize_anything`
 
 Use `gepa.optimize_anything.optimize_anything` to perform black-box optimization over a
-text artifact. GEPA is both the Python package name and one backend; `engine="gepa"`
-selects its reflective evolutionary search. The same task and evaluator can be run with
-`autoresearch`, `meta_harness`, or the deliberately simple `best_of_n` baseline.
+text artifact. The published `gepa==0.1.4` package is the standalone reflective
+engine. This plugin adds native `autoresearch`, `meta_harness`, and `best_of_n`
+engines plus the default two-phase Omni orchestration.
+
+Dependency boundary: install `gepa[full]==0.1.4` for the standalone reflective
+engine and its Codex proposer. The native agent engines use the checked-in
+`scripts/native_omni/` runtime and do not require a separate GEPA checkout.
 
 Black-box refers to the evaluator, not the candidate. The backend cannot see metric
 internals or gradients; it sees the candidate, the scalar score, and the feedback in
@@ -25,11 +29,17 @@ of optimization quality.
 The public launcher is string-candidate-first:
 
 ```python
+import os
+from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig
+
 result = optimize_anything(
     seed_candidate="candidate text",
     evaluator=evaluate,
     objective="Improve the candidate against the evaluator.",
-    config=OptimizeAnythingConfig(engine="gepa", max_evals=20),
+    config=GEPAConfig(
+        engine=EngineConfig(max_metric_calls=20),
+        reflection=ReflectionConfig(reflection_lm=os.environ["OPENAI_MODEL"]),
+    ),
 )
 ```
 
@@ -52,11 +62,11 @@ alone gives the proposer no useful direction. For stochastic systems, average mu
 samples inside the evaluator instead of selecting on a lucky single sample. See
 `references/writing_evaluators.md`.
 
-The local Codex and Pi custom proposers retain GEPA's component contract:
+The local Codex/Pi custom proposers retain GEPA's component contract:
 `proposer(candidate, reflective_dataset, components_to_update, *, metadata=None) ->
 dict[str, str]`. A one-component dictionary may appear in the development
-self-evaluation harness when the pinned fork's custom-proposer bridge requires named
-components; that is a local compatibility extension, not the public launcher contract.
+self-evaluation harness when a compatibility bridge requires named components;
+that is a local adapter boundary, not the direct PyPI launcher contract.
 
 ## Optimization modes
 
@@ -68,71 +78,50 @@ Choose a mode by the data arguments:
 | Multi-task | `dataset=[...]` | One candidate is scored for each related example and selected on that dataset. |
 | Generalization | `dataset=[...], valset=[...]` | Optimize on `dataset`, then select on representative unseen examples in `valset`. |
 
-`valset` is a selection set, not the final report. Separate `valset`-based selection is
-implemented by the `gepa` backend; the agentic backends fold `valset` into their scoring
-pool. `test_set` is independent of these modes and reporting-only: it is sealed from the
-search, scored after optimization, and should be used for an unbiased final number.
+`valset` is a selection set, not the final report. The direct PyPI
+`optimize_anything()` call has no `test_set` parameter. The plugin wrapper
+`run_optimization(..., engine="gepa")` may receive `task["test_set"]`, score it
+after the PyPI run, and attach that held-out score to its wrapper result.
 
 ## Default Omni workflow
 
-For a normal “optimize this” request, use the two-phase Omni workflow in
+For a normal “optimize this” request, use the two-phase plugin-native Omni workflow in
 `references/omni.md`:
 
 1. Define one shared candidate, evaluator, objective, dataset/valset, and explicit total
    budget.
-2. Run `gepa`, `autoresearch`, and `meta_harness` through `optimize_best_of` in parallel.
-   The local runtime uses a read-only `CodexAgentProposer` or `PiAgentProposer` for
-   GEPA and the selected `agent_backend` for both writable agentic branches. Codex is
-   the default backend.
+2. Run the three isolated Phase 1 branches through the plugin-native coordinator:
+   PyPI reflective `gepa`, native `autoresearch`, and native `meta_harness`. The
+   selected `agent_backend` drives the two writable branches; Codex is the default.
 3. Select `explore.best_candidate`, then start a fresh continuation optimizer in a new
    run/output directory. Fresh GEPA is the default continuation (“Omni-GEPA”); set
    `continuation_engine` explicitly only when an AutoResearch or Meta-Harness continuation
    is wanted.
-4. Pass `test_set` only to the final continuation and report its score separately from the
-   selection score.
+4. Pass `test_set` only to the final continuation and report its score
+   separately from the selection score.
 
 Split each supplied total budget into four balanced positive slices: three explorations
 and one continuation. Omni requires an explicit usable `max_evals` and/or
 `max_token_cost`; if the total cannot provide four positive slices, explain the constraint
-and use a standalone engine instead. The internal
-`scripts/omni_pipeline.py` helper composes the existing launcher primitives without
-changing their public API.
+   and use a standalone engine instead. The internal
+   `scripts/omni_pipeline.py` helper composes the native runtime and the explicit
+   PyPI GEPA adapter without changing the public launcher API.
 
 ### Backend-specific model selection
 
-The Omni helper accepts `codex_model` and `pi_model` so the same selected model is
-used by the GEPA proposer, AutoResearch, Meta-Harness, and fresh continuation:
+All engines use the same OpenAI-compatible Chat Completions model. Configure
+the endpoint once so the GEPA proposer, AutoResearch, Meta-Harness, and fresh
+continuation share it:
 
-```python
-run_omni(
-    seed_candidate,
-    task=task,
-    agent_backend="codex",
-    codex_model="gpt-5-codex",
-    max_evals=40,
-    max_token_cost=20.0,
-    run_dir="external-runs/omni",
-    output_dir="external-runs/omni/output",
-)
-
-run_omni(
-    seed_candidate,
-    task=task,
-    agent_backend="pi",
-    pi_model="provider/model",
-    max_evals=40,
-    max_token_cost=20.0,
-    run_dir="external-runs/omni-pi",
-    output_dir="external-runs/omni-pi/output",
-)
+```bash
+export OPENAI_BASE_URL="https://api.openai.com/v1"
+export OPENAI_MODEL="your-model"
+export OPENAI_API_KEY="your-api-key"
 ```
 
-For `codex`, selection is `codex_model`, then legacy `agent_model`, then the
-authenticated Codex CLI default. For `pi`, it is `pi_model`, then legacy
-`agent_model`, then the Pi provider default. The non-selected backend field is
-ignored. `agent_model` remains supported for compatibility; Claude is available
-only when explicitly selected with `agent_backend="claude"` and continues to use
-`agent_model` for its agentic engines.
+`agent_backend` remains a compatibility label (`codex`, `pi`, or `claude`), while
+`OPENAI_MODEL` and the three `OPENAI_*` variables are authoritative. Legacy
+model and command parameters remain accepted for source compatibility.
 
 Set `gepa_parallel_proposals=(parents, mutations)` to opt GEPA into P×N sampling
 with `AllImprovements`; otherwise Omni keeps its sequential one-worker GEPA
@@ -162,87 +151,88 @@ proposals.
 Example configuration:
 
 ```python
-config = OptimizeAnythingConfig(
-    engine="gepa",
-    max_evals=300,
-    max_token_cost=5.0,
-    stop_at_score=1.0,
-    run_dir="external-runs/my-run",
-    output_dir="external-runs/my-run/output",
-    engine_config={
-        "engine": {"max_workers": 16, "seed": 0},
-        "reflection": {"reflection_minibatch_size": 5},
-    },
+import os
+
+config = GEPAConfig(
+    engine=EngineConfig(
+        seed=0,
+        max_metric_calls=300,
+        max_workers=16,
+        run_dir="external-runs/my-run",
+    ),
+    reflection=ReflectionConfig(
+        reflection_lm=os.environ["OPENAI_MODEL"],
+        reflection_minibatch_size=5,
+    ),
 )
 ```
 
-`max_evals` caps evaluation calls; `max_token_cost` caps the backend's proposer/agent
-spend. They are independent. A wall-clock timeout on the launched process is a useful
-backstop. If both are `None`, the run is unbounded apart from a warning. Engine
-configuration is strict: keys belong to the selected backend, and swapping
-`engine=` requires swapping its `engine_config` block.
+For direct PyPI GEPA, `EngineConfig.max_metric_calls` caps evaluation calls;
+`EngineConfig.max_reflection_cost` caps reflection spend, and
+`GEPAConfig.stop_callbacks` carries stopping policy. These are nested typed
+configuration fields—not top-level `max_evals`, `max_token_cost`, `engine=`,
+`engine_config`, or `output_dir` arguments. The plugin-native Omni wrapper has
+its own explicit `max_evals` and `max_token_cost` budgets.
 
 ## Engine selection
 
-- `gepa` performs in-process reflective mutation and Pareto-aware selection. The
-  local adapter is `CodexAgentProposer` for `agent_backend="codex"` and
-  `PiAgentProposer` for `agent_backend="pi"`.
-- `autoresearch` runs a long-horizon experiment loop. The maintained local profile
-  defaults to `agent_backend="codex"` and resumes one Codex thread for Ralph
-  continuations; `pi` and `claude` remain explicit alternatives.
-- `meta_harness` proposes candidates while the outer framework evaluates and selects
+- `gepa` performs in-process reflective mutation and Pareto-aware selection through
+  the pinned PyPI package and the external read-only Codex proposer.
+- `autoresearch` runs a plugin-native long-horizon experiment loop. The local
+  profile defaults to `agent_backend="codex"` and carries one external
+  workspace/session lineage across Ralph continuations; `pi` and `claude`
+  remain explicit alternatives.
+- `meta_harness` is plugin-native: it proposes candidates while the outer framework evaluates and selects
   them. The default Codex profile starts a fresh ephemeral session per iteration
   while the frontier workspace persists; `pi` and `claude` remain explicit alternatives.
-- `best_of_n` samples independent candidates and retains the best. It ignores feedback
+- `best_of_n` is plugin-native, samples independent candidates, and retains the best. It ignores feedback
   and history, so use it as a comparison floor.
 
 Composition helpers—`optimize_sequential`, `optimize_parallel`, `optimize_best_of`,
-`optimize_vote`, and `optimize_adaptive_sequential`—reuse the same task/evaluator. Give
-each stage explicit budgets and keep stage artifacts in a shared external location. The
-default Omni workflow specifically uses `optimize_best_of` for its three-way Phase 1
-portfolio, then calls `optimize_anything` once for a fresh Phase 2 continuation.
+`optimize_vote`, and `optimize_adaptive_sequential`—remain part of the direct PyPI
+launcher when available. Give each direct-PyPI stage explicit budgets and keep stage
+artifacts in a shared external location. The default Omni workflow uses the shipped
+native coordinator for its three-way Phase 1 portfolio, then starts one fresh Phase 2
+continuation.
 
-## Codex-native runtime boundary
+## Chat Completions runtime boundary
 
 Follow `references/codex.md` for `CodexAgentProposer`. Each proposal is isolated in an
-external directory, invokes `codex exec` with a read-only sandbox, and must return
-structured `new_texts` whose keys exactly match `components_to_update` and whose values
-are strings. Per-proposal inputs, output, usage, stderr, and errors remain available for
+external directory, sends its materialized context through Chat Completions, and must
+return structured `new_texts` whose keys exactly match `components_to_update` and whose
+values are strings. Per-proposal inputs, output, usage, and errors remain available for
 diagnosis.
 
-Follow `references/codex.md` for the read-only GEPA proposer and the writable
-Codex-backed agent engines. Codex always uses `--sandbox workspace-write` against
-the engine's external workspace and explicitly enables workspace-write network
-access so `eval.sh` can reach the local evaluation server; `sandbox=False` is
-rejected and never escalates to unrestricted access. When `max_token_cost` is set for Codex, provide both
-explicit input and output USD-per-million-token rates. Without a USD cap, token
-usage is retained and cost is marked unknown when rates are absent.
+The native `OpenAIChatCompletionRunner` sends prompt text and JSON, retains
+AutoResearch message history, and writes raw responses to an external workspace.
+The model does not receive local shell or filesystem tools. `sandbox=False` is
+rejected at the wrapper boundary. When `max_token_cost` is set, provide both
+explicit input and output USD-per-million-token rates.
 
 Follow `references/pi.md` for `PiAgentProposer` and the explicit Pi-backed agent
-alternative. Pi's tool allowlist is not an OS security boundary: `sandbox=True`
-requires `bwrap` on Linux or `sandbox-exec` on macOS, and there is no silent
-unsandboxed fallback.
+compatibility label. It uses the same Chat Completions endpoint; no Pi CLI or
+provider-specific login is required.
 
-Run the extended local preflight before a real run:
+Run the extended local preflight before a real run. It checks the pinned GEPA
+surface where relevant, the native runtime, and the three `OPENAI_*` variables:
 
 ```bash
-python3 skills/gepa-omni-skill/scripts/preflight.py --engine gepa
-python3 skills/gepa-omni-skill/scripts/preflight.py --engine codex
-python3 skills/gepa-omni-skill/scripts/preflight.py --engine omni
-python3 skills/gepa-omni-skill/scripts/preflight.py --engine omni --agent-backend pi
+uv run python skills/gepa-omni-skill/scripts/preflight.py --engine gepa
+uv run python skills/gepa-omni-skill/scripts/preflight.py --engine codex
+uv run python skills/gepa-omni-skill/scripts/preflight.py --engine omni
+uv run python skills/gepa-omni-skill/scripts/preflight.py --engine omni --agent-backend pi
 ```
 
-The plugin keeps backend selection in the local runtime layer: Codex is the
-default for all Omni branches, Pi is an explicit alternative, and Claude is an
-explicit alternative for the agentic engines. The GEPA custom proposer follows
-the selected Codex/Pi backend.
+The plugin keeps backend selection as runtime metadata: `codex` is the default
+label, while Pi and Claude are explicit alternatives. All labels use the same
+Chat Completions model configuration.
 
 ## Local setup and references
 
-The plugin ships development tooling but does not vendor GEPA. Install the maintained
-engine-capable `gepa[full]` fork explicitly in the consumer environment, pinned to its
-deployment URL and commit. Use `uv sync --project . --group dev` only for local tests
-and linting.
+The plugin ships development tooling but does not vendor GEPA. The development
+environment installs the published `gepa[full]==0.1.4` API via
+`uv sync --project . --group dev`. Native Omni engine code is shipped in the
+plugin under `scripts/native_omni/`; it is tested and staged with the skill.
 
 - `references/api.md` — launcher contract, modes, budgets, engines, strict configuration,
   compositions, and result metadata.
@@ -255,8 +245,10 @@ and linting.
 - `references/codex.md` — Codex proposer contract, isolation, diagnostics, and limits.
 - `references/pi.md` — Pi proposer and explicit Pi agent-engine behavior.
 - `references/tracking.md` — optional W&B/MLflow tracking.
+- `THIRD_PARTY_NOTICES.md` — pinned MIT provenance for native runtime portions.
 
-The semantic comparison baseline is upstream `main` at
-`ba30ee24e8f63dfdb9e557ed8cfaaec7aa09a6df`. The [upstream skill](https://github.com/gepa-ai/gepa/blob/ba30ee24e8f63dfdb9e557ed8cfaaec7aa09a6df/.claude/skills/gepa-optimize-anything/SKILL.md)
-is the source for shared launcher semantics; this plugin preserves the Codex packaging
-and Codex/Pi runtime adapters as intentional local extensions.
+The native runtime adaptation is pinned to the MIT-licensed GEPA commit
+[`8a2bed96385202f69caaeb5327a843ed2f5ea225`](https://github.com/gepa-ai/gepa/tree/8a2bed96385202f69caaeb5327a843ed2f5ea225);
+see `THIRD_PARTY_NOTICES.md` for attribution and license scope. The published
+PyPI 0.1.4 API remains the reference for standalone reflective launcher
+semantics; native Codex/Pi runtime behavior is an intentional plugin extension.

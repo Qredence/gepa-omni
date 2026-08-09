@@ -12,9 +12,11 @@ uv run ruff format --check .
 git diff --check
 ```
 
-The engine-capable `gepa[full]` dependency is supplied by the consuming
-environment. Do not vendor the GEPA repository or add a deployment-specific
-fork URL to the root dependency list.
+The development group installs the published `gepa[full]==0.1.4` API for the
+standalone reflective engine. AutoResearch, Meta-Harness, Best-of-N, and Omni
+runtime code are plugin-native and must remain usable without a checkout of a
+separate GEPA repository. Do not vendor a second GEPA implementation or add a
+deployment-specific dependency URL.
 
 ## Change checklist
 
@@ -25,7 +27,11 @@ fork URL to the root dependency list.
   installable payload when packaging changes. The staging output must contain
   only tracked runtime files.
 - Run self-evaluation only with the explicit
-  `--allow-candidate-execution` opt-in and a pinned, engine-capable GEPA fork.
+  `--allow-candidate-execution` opt-in. Keep standalone reflective GEPA tests
+  on PyPI 0.1.4 and exercise plugin-native engines through their checked-in
+  runtime primitives.
+- Keep `skills/gepa-omni-skill/THIRD_PARTY_NOTICES.md` and the pinned MIT
+  provenance headers synchronized when native runtime code is adapted.
 - Keep proposer artifacts, evaluation runs, credentials, and generated caches
   out of Git.
 

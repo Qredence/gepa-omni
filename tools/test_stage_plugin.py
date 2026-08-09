@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,15 @@ from stage_plugin import CANONICAL_PLUGIN_NAME, REPO_ROOT, stage
 
 
 class StagePluginTests(unittest.TestCase):
+    @staticmethod
+    def _is_tracked(relative_path: str) -> bool:
+        result = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "ls-files", "--error-unmatch", "--", relative_path],
+            capture_output=True,
+            check=False,
+        )
+        return result.returncode == 0
+
     def test_portable_stage_contains_only_runtime_payload(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / CANONICAL_PLUGIN_NAME
@@ -19,6 +29,15 @@ class StagePluginTests(unittest.TestCase):
             self.assertTrue((staged / "plugin.json").is_file())
             self.assertTrue((staged / "skills").is_dir())
             self.assertTrue((staged / "LICENSE").is_file())
+            for relative_path in (
+                "skills/gepa-omni-skill/THIRD_PARTY_NOTICES.md",
+                "skills/gepa-omni-skill/scripts/native_omni/core.py",
+            ):
+                self.assertEqual(
+                    (staged / relative_path).is_file(),
+                    self._is_tracked(relative_path),
+                    relative_path,
+                )
             self.assertFalse((staged / ".codex-plugin").exists())
             for development_only in (
                 "tests",
@@ -40,6 +59,15 @@ class StagePluginTests(unittest.TestCase):
             self.assertTrue((staged / ".codex-plugin").is_dir())
             self.assertTrue((staged / "skills").is_dir())
             self.assertTrue((staged / "LICENSE").is_file())
+            for relative_path in (
+                "skills/gepa-omni-skill/THIRD_PARTY_NOTICES.md",
+                "skills/gepa-omni-skill/scripts/native_omni/runners.py",
+            ):
+                self.assertEqual(
+                    (staged / relative_path).is_file(),
+                    self._is_tracked(relative_path),
+                    relative_path,
+                )
             self.assertFalse((staged / "plugin.json").exists())
 
     def test_stage_rejects_unknown_package_format(self) -> None:
@@ -64,12 +92,14 @@ class StagePluginTests(unittest.TestCase):
                 stage(output)
 
     def test_stage_omits_untracked_runtime_files(self) -> None:
-        marker = REPO_ROOT / "skills" / "gepa-omni-skill" / "scripts" / "untracked-runtime-marker.txt"
+        marker = REPO_ROOT / "skills" / "gepa-omni-skill" / "scripts" / "native_omni" / "untracked-runtime-marker.py"
         marker.write_text("must not ship", encoding="utf-8")
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
                 staged = stage(Path(temp_dir) / CANONICAL_PLUGIN_NAME)
-                self.assertFalse((staged / "skills" / "gepa-omni-skill" / "scripts" / marker.name).exists())
+                self.assertFalse(
+                    (staged / "skills" / "gepa-omni-skill" / "scripts" / "native_omni" / marker.name).exists()
+                )
         finally:
             marker.unlink(missing_ok=True)
 
