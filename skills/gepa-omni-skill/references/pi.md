@@ -1,73 +1,49 @@
-# Pi-backed agent engines (explicit alternative)
+# Backend compatibility labels
 
-The plugin's agent-engine default is Codex. Select `agent_backend="pi"` when
-you want the maintained GEPA fork's generic `AgentRunner` extension instead.
-It does not copy AutoResearch or Meta-Harness into the plugin and it does not
-silently fall back to Claude.
+`agent_backend="pi"` remains available for callers that use the historical
+Pi name. It uses the same OpenAI-compatible Chat Completions endpoint as the
+`codex` and `claude` labels; no Pi executable or provider-specific login is
+required.
 
-## Configuration
+Set the shared environment configuration:
+
+```bash
+export OPENAI_BASE_URL="https://api.openai.com/v1"
+export OPENAI_MODEL="your-model"
+export OPENAI_API_KEY="your-api-key"
+```
+
+## Native runner
 
 ```python
-from gepa.optimize_anything import OptimizeAnythingConfig
+from native_omni import OpenAIChatCompletionRunner
 
-autoresearch = OptimizeAnythingConfig(
-    engine="autoresearch",
-    max_evals=100,
-    max_token_cost=5.0,
-    sandbox=True,
-    run_dir="external-runs/autoresearch",
-    output_dir="external-runs/autoresearch/output",
-    engine_config={
-        "agent_backend": "pi",
-        "pi_command": "pi",
-        "model": "provider/model",
-        "ralph": True,
-        "max_no_eval_seconds": 300,
-    },
-)
-
-meta_harness = OptimizeAnythingConfig(
-    engine="meta_harness",
-    max_evals=100,
-    max_token_cost=5.0,
-    sandbox=True,
-    run_dir="external-runs/meta-harness",
-    output_dir="external-runs/meta-harness/output",
-    engine_config={
-        "agent_backend": "pi",
-        "pi_command": "pi",
-        "model": "provider/model",
-        "max_iterations": 20,
-        "max_candidates_per_iter": 3,
-    },
+runner = OpenAIChatCompletionRunner(backend="pi", timeout_seconds=600)
+result = runner.run(
+    prompt,
+    work_dir="/tmp/gepa-pi-compatible-workspace",
+    session_id="optional-session-id",
 )
 ```
 
-The plugin's `PiAgentProposer` is separate from these engines. It uses Pi JSON
-mode with `--no-session`, `--no-context-files`, disabled extensions/skills,
-and the read-only tool profile `read,grep,find,ls`. It preserves the GEPA
-custom proposer contract and stores one diagnostic directory per proposal.
+The runner keeps the backend label in result metadata, retains message history
+for a continuing AutoResearch session, records usage/cost, and writes raw API
+responses under the external workspace. The model does not execute local
+tools, shell commands, or filesystem operations.
 
-AutoResearch uses one persistent Pi RPC process, so Ralph continuation prompts
-share the same live session state. Meta-Harness starts a new Pi process for
-each iteration, while `agents/`, `frontier.json`, evaluation traces, and the
-candidate workspace remain persistent.
+`PiAgentProposer` is the reflective GEPA compatibility alias for the same Chat
+Completions proposer. `pi_model`, `pi_command`, and the old CLI runner classes
+remain source-compatible options, but `OPENAI_MODEL` and the shared API
+environment are authoritative.
 
-## Safety and prerequisites
+## Preflight
 
-Pi's `--tools` allowlist is not an OS security boundary. With `sandbox=True`,
-the fork wraps Pi in Linux `bwrap` or macOS `sandbox-exec`; if the requested
-runtime is missing, preflight fails rather than launching Pi unsandboxed.
-The jail exposes the temporary agent workspace, Pi's provider configuration,
-system runtime files, and network access needed by the evaluator and model
-provider. It does not expose the repository checkout as a writable path.
+```bash
+uv run python skills/gepa-omni-skill/scripts/preflight.py \
+  --engine autoresearch --agent-backend pi
+```
 
-Install the fork externally and pin its URL and commit in the consuming
-environment. The repository root intentionally does not add GEPA as a
-dependency. Follow the canonical [local setup](../SKILL.md#local-setup),
-using `--engine omni --agent-backend pi` for this explicit profile.
-
-For a deployed fork, replace the file URL with the maintained Git URL and
-commit. Authenticate `pi` and its selected provider first. The agent-engine
-preflight requires `jq` and `curl`; Linux sandboxing requires `bwrap`; macOS
-uses the system Seatbelt `sandbox-exec` runtime.
+Preflight checks `OPENAI_BASE_URL`, `OPENAI_MODEL`, `OPENAI_API_KEY`, the
+shared native runner, and configured pricing when a token cap is supplied. It
+does not probe a Pi installation or make a model call unless `--test-lm` is
+provided.

@@ -1,27 +1,26 @@
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
 
-SCRIPT_DIR = (
-    Path(__file__).resolve().parents[1]
-    / "skills"
-    / "gepa-omni-skill"
-    / "scripts"
-)
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "skills" / "gepa-omni-skill" / "scripts"
 _SCRIPT_DIR_STR = str(SCRIPT_DIR)
 sys.path.insert(0, _SCRIPT_DIR_STR)
 try:
     import omni_pipeline  # noqa: E402
+    from native_omni.runners import AgentRunResult  # noqa: E402
 finally:
     if sys.path and sys.path[0] == _SCRIPT_DIR_STR:
         sys.path.pop(0)
     elif _SCRIPT_DIR_STR in sys.path:
         sys.path.remove(_SCRIPT_DIR_STR)
+
 
 class FakeConfig:
     def __init__(self, **kwargs: object) -> None:
@@ -42,6 +41,29 @@ class FakeLauncher:
     def optimize_anything(self, seed: str, **kwargs: object) -> SimpleNamespace:
         self.optimize_calls.append((seed, kwargs))
         return SimpleNamespace(best_candidate="final-candidate", metadata={})
+
+
+class PublicResultLauncher:
+    def __init__(self, config_cls: type[object]) -> None:
+        self.GEPAConfig = config_cls
+        self.kwargs: dict[str, object] = {}
+        self.optimize_calls = 0
+        self.best_of_calls = 0
+
+    def optimize_best_of(self, _seed: str, **_kwargs: object) -> SimpleNamespace:
+        self.best_of_calls += 1
+        return SimpleNamespace(best_candidate="unexpected")
+
+    def optimize_anything(self, seed: str, **kwargs: object) -> SimpleNamespace:
+        self.optimize_calls += 1
+        self.kwargs = kwargs
+        return SimpleNamespace(
+            best_candidate={"current_candidate": seed},
+            best_idx=0,
+            val_aggregate_scores=[0.75],
+            total_metric_calls=1,
+            run_dir="/external/runs/public-gepa",
+        )
 
 
 class OmniPipelineTests(unittest.TestCase):
@@ -73,12 +95,30 @@ class OmniPipelineTests(unittest.TestCase):
             "max_token_cost": 20.0,
             "run_dir": "/external/runs/omni",
             "output_dir": "/external/outputs/omni",
+            "codex_input_cost_per_million": 2.0,
+            "codex_output_cost_per_million": 8.0,
             "launcher": self.launcher,
             "config_cls": FakeConfig,
             "codex_proposer_factory": self.proposer_factory,
         }
         arguments.update(overrides)
         return omni_pipeline.run_omni("seed", **arguments)
+
+    def _run_pypi_optimization(self, task: dict[str, object]) -> tuple[object, PublicResultLauncher]:
+        _launcher, config_cls = omni_pipeline._load_launcher(None, None)
+        public_launcher = PublicResultLauncher(config_cls)
+        result = omni_pipeline.run_optimization(
+            "seed",
+            task=task,
+            engine="gepa",
+            max_evals=4,
+            max_token_cost=None,
+            run_dir="/external/runs/public-gepa",
+            output_dir="/external/outputs/public-gepa",
+            launcher=public_launcher,
+            codex_proposer_factory=self.proposer_factory,
+        )
+        return result, public_launcher
 
     def test_partition_budget_creates_four_equal_slices(self) -> None:
         slices = omni_pipeline.partition_budget(40, 20.0)
@@ -92,6 +132,147 @@ class OmniPipelineTests(unittest.TestCase):
                 omni_pipeline.BudgetSlice(10, 5.0),
             ),
         )
+
+    def test_pypi_gepa_014_config_uses_public_nested_api(self) -> None:
+        _launcher, config_cls = omni_pipeline._load_launcher(None, None)
+        self.assertEqual(config_cls.__name__, "GEPAConfig")
+        config = omni_pipeline._make_pypi_config(
+            config_cls,
+            omni_pipeline.BudgetSlice(4, None),
+            run_dir=Path("/external/runs/public-gepa"),
+            stop_at_score=1.0,
+            max_concurrency=2,
+            agent_backend="codex",
+            agent_model=None,
+            codex_model="gpt-5-codex",
+            codex_command="codex",
+            codex_timeout_seconds=45.0,
+            codex_proposer_factory=self.proposer_factory,
+            gepa_parallel_proposals=None,
+        )
+        self.assertEqual(config.engine.max_metric_calls, 4)
+        self.assertEqual(config.engine.max_workers, 2)
+        self.assertIsNotNone(config.reflection.custom_candidate_proposer)
+        self.assertEqual(self.proposer_calls[0]["model"], "gpt-5-codex")
+
+    def test_pypi_token_budget_requires_codex_pricing_and_forwards_cap(self) -> None:
+        _launcher, config_cls = omni_pipeline._load_launcher(None, None)
+        with self.assertRaisesRegex(ValueError, "pricing rates"):
+            omni_pipeline._make_pypi_config(
+                config_cls,
+                omni_pipeline.BudgetSlice(4, 1.0),
+                run_dir=Path("/external/runs/pypi-priced"),
+                stop_at_score=None,
+                max_concurrency=1,
+                agent_backend="codex",
+                agent_model=None,
+                codex_model=None,
+                codex_command="codex",
+                codex_timeout_seconds=45.0,
+                codex_proposer_factory=self.proposer_factory,
+            )
+
+        config = omni_pipeline._make_pypi_config(
+            config_cls,
+            omni_pipeline.BudgetSlice(4, 1.0),
+            run_dir=Path("/external/runs/pypi-priced"),
+            stop_at_score=None,
+            max_concurrency=1,
+            agent_backend="codex",
+            agent_model=None,
+            codex_model=None,
+            codex_command="codex",
+            codex_timeout_seconds=45.0,
+            codex_input_cost_per_million=2.0,
+            codex_output_cost_per_million=8.0,
+            codex_proposer_factory=self.proposer_factory,
+        )
+        self.assertEqual(config.engine.max_metric_calls, 4)
+        self.assertEqual(self.proposer_calls[-1]["max_token_cost"], 1.0)
+        self.assertEqual(self.proposer_calls[-1]["input_cost_per_million"], 2.0)
+        self.assertEqual(self.proposer_calls[-1]["output_cost_per_million"], 8.0)
+
+    def test_pypi_launcher_keeps_test_set_out_of_public_call(self) -> None:
+        batch_calls: list[object] = []
+        result, public_launcher = self._run_pypi_optimization(
+            {
+                "evaluator": lambda _candidate, _example: (0.5, {}),
+                "batch_evaluator": lambda pairs: batch_calls.append(pairs),
+                "dataset": ["train"],
+                "valset": ["validation"],
+                "test_set": ["held-out"],
+            }
+        )
+        self.assertNotIn("test_set", public_launcher.kwargs)
+        self.assertEqual(result.best_candidate, "seed")
+        self.assertEqual(result.metadata["test_score"], 0.5)
+        self.assertEqual(batch_calls, [])
+
+    def test_explicit_pypi_launcher_does_not_infer_native_omni(self) -> None:
+        _launcher, config_cls = omni_pipeline._load_launcher(None, None)
+        public_launcher = PublicResultLauncher(config_cls)
+
+        with self.assertRaisesRegex(ValueError, "selected GEPA launcher config") as raised:
+            omni_pipeline.run_omni(
+                "seed",
+                task=self.task,
+                max_evals=4,
+                max_token_cost=None,
+                run_dir="/external/runs/public-gepa",
+                output_dir="/external/outputs/public-gepa",
+                launcher=public_launcher,
+            )
+
+        self.assertNotIn("GEPA_REF", str(raised.exception))
+        self.assertEqual(public_launcher.best_of_calls, 0)
+        self.assertEqual(public_launcher.optimize_calls, 0)
+
+    def test_pypi_held_out_scoring_supports_batch_evaluator_scalars(self) -> None:
+        batch_calls: list[list[tuple[str, object]]] = []
+
+        def batch_evaluator(pairs: list[tuple[str, object]]) -> list[float]:
+            batch_calls.append(pairs)
+            return [0.25, 0.75]
+
+        result, _public_launcher = self._run_pypi_optimization(
+            {
+                "batch_evaluator": batch_evaluator,
+                "dataset": ["train"],
+                "valset": ["validation"],
+                "test_set": ["first", "second"],
+            }
+        )
+
+        self.assertEqual(batch_calls, [[("seed", "first"), ("seed", "second")]])
+        self.assertEqual(result.metadata["test_scores"], [0.25, 0.75])
+        self.assertEqual(result.metadata["test_score"], 0.5)
+
+    def test_pypi_held_out_scoring_supports_batch_evaluator_tuples(self) -> None:
+        def batch_evaluator(_pairs: list[tuple[str, object]]) -> list[tuple[float, dict[str, str]]]:
+            return [(0.4, {"detail": "one"}), (0.6, {"detail": "two"})]
+
+        result, _public_launcher = self._run_pypi_optimization(
+            {
+                "batch_evaluator": batch_evaluator,
+                "dataset": ["train"],
+                "valset": ["validation"],
+                "test_set": ["first", "second"],
+            }
+        )
+
+        self.assertEqual(result.metadata["test_scores"], [0.4, 0.6])
+        self.assertEqual(result.metadata["test_score"], 0.5)
+
+    def test_pypi_held_out_batch_evaluator_requires_one_result_per_example(self) -> None:
+        with self.assertRaisesRegex(ValueError, "exactly one result per test example"):
+            self._run_pypi_optimization(
+                {
+                    "batch_evaluator": lambda _pairs: [0.5],
+                    "dataset": ["train"],
+                    "valset": ["validation"],
+                    "test_set": ["first", "second"],
+                }
+            )
 
     def test_omni_runs_three_shared_explorers_then_fresh_gepa(self) -> None:
         result = self._run_omni()
@@ -120,8 +301,8 @@ class OmniPipelineTests(unittest.TestCase):
             ["codex", "codex"],
         )
         self.assertEqual(configs[1].kwargs["engine_config"]["codex_command"], "codex")
-        self.assertIsNone(configs[1].kwargs["engine_config"]["codex_input_cost_per_million"])
-        self.assertIsNone(configs[1].kwargs["engine_config"]["codex_output_cost_per_million"])
+        self.assertEqual(configs[1].kwargs["engine_config"]["codex_input_cost_per_million"], 2.0)
+        self.assertEqual(configs[1].kwargs["engine_config"]["codex_output_cost_per_million"], 8.0)
         self.assertEqual(configs[2].kwargs["engine_config"]["timeout_seconds"], 600.0)
         self.assertTrue(configs[1].kwargs["engine_config"]["ralph"])
         self.assertEqual(configs[2].kwargs["engine_config"]["max_candidates_per_iter"], 3)
@@ -333,6 +514,15 @@ class OmniPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "tuple"):
             self._run_omni(gepa_parallel_proposals=[2, 2])
 
+    def test_codex_token_budget_does_not_require_pricing_rates(self) -> None:
+        result = self._run_omni(
+            max_token_cost=20.0,
+            codex_input_cost_per_million=None,
+            codex_output_cost_per_million=None,
+        )
+
+        self.assertEqual(result.best_candidate, "final-candidate")
+
     def test_pi_and_claude_remain_explicit_agent_backend_options(self) -> None:
         for backend in ("pi", "claude"):
             with self.subTest(backend=backend):
@@ -351,14 +541,11 @@ class OmniPipelineTests(unittest.TestCase):
                     self.assertNotIn("pi_command", configs[1].kwargs["engine_config"])
                     self.assertNotIn("codex_command", configs[1].kwargs["engine_config"])
 
-    def test_claude_uses_its_default_model_when_no_model_is_supplied(self) -> None:
+    def test_claude_does_not_invent_a_provider_specific_model(self) -> None:
         self._run_omni(agent_backend="claude")
 
         configs = self.launcher.best_of_calls[0][1]["configs"]
-        self.assertEqual(
-            [config.kwargs["engine_config"]["model"] for config in configs[1:]],
-            ["claude-sonnet-4-6", "claude-sonnet-4-6"],
-        )
+        self.assertTrue(all("model" not in config.kwargs["engine_config"] for config in configs[1:]))
 
     def test_default_run_optimization_uses_omni_and_standalone_bypasses_it(self) -> None:
         result = omni_pipeline.run_optimization(
@@ -366,6 +553,8 @@ class OmniPipelineTests(unittest.TestCase):
             task=self.task,
             max_evals=40,
             max_token_cost=20.0,
+            codex_input_cost_per_million=2.0,
+            codex_output_cost_per_million=8.0,
             run_dir="/external/runs/default",
             output_dir="/external/outputs/default",
             launcher=self.launcher,
@@ -383,6 +572,8 @@ class OmniPipelineTests(unittest.TestCase):
             engine="best_of_n",
             max_evals=12,
             max_token_cost=3.0,
+            codex_input_cost_per_million=2.0,
+            codex_output_cost_per_million=8.0,
             run_dir="/external/runs/standalone",
             output_dir="/external/outputs/standalone",
             launcher=self.launcher,
@@ -436,6 +627,131 @@ class OmniPipelineTests(unittest.TestCase):
                 launcher=self.launcher,
                 config_cls=FakeConfig,
             )
+
+    def test_native_best_of_n_is_independent_and_scores_heldout_afterwards(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        class Runner:
+            def __init__(self, **kwargs: object) -> None:
+                calls.append(dict(kwargs))
+
+            def run(self, _prompt: str, **kwargs: object) -> AgentRunResult:
+                work_dir = Path(kwargs["work_dir"])
+                return AgentRunResult(
+                    final_text=f"```\n{work_dir.name}\n```",
+                    session_id=None,
+                    input_tokens=1,
+                    output_tokens=1,
+                    cost_usd=0.0,
+                    returncode=0,
+                    command=("fake",),
+                    stdout="",
+                    stderr="",
+                )
+
+            def close(self) -> None:
+                return
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            result = omni_pipeline.run_optimization(
+                "seed",
+                task={
+                    "evaluator": lambda candidate, example: (1.0 if "sample-0002" in candidate else 0.5, {}),
+                    "dataset": ["train"],
+                    "test_set": ["held-out"],
+                },
+                engine="best_of_n",
+                max_evals=2,
+                max_token_cost=None,
+                run_dir=root / "runs",
+                output_dir=root / "outputs",
+                native_runner_factory=lambda **kwargs: Runner(**kwargs),
+            )
+
+        self.assertIn("sample-0002", result.best_candidate)
+        self.assertEqual(result.metadata["heldout_scores"], [1.0])
+        self.assertEqual(result.metadata["test_scores"], [1.0])
+        self.assertEqual(result.metadata["test_score"], 1.0)
+        self.assertEqual([call["command"] for call in calls], ["codex", "codex"])
+        self.assertNotEqual(result.metadata["work_dir"], str(calls[0]["work_dir"]))
+
+    def test_native_omni_runs_three_branches_then_fresh_continuation(self) -> None:
+        calls: list[tuple[str, str | None, Path, str]] = []
+
+        class Runner:
+            def __init__(self, **kwargs: object) -> None:
+                self.backend = str(kwargs["backend"])
+
+            def run(self, prompt: str, **kwargs: object) -> AgentRunResult:
+                work_dir = Path(kwargs["work_dir"])
+                label = "continuation" if "phase-2" in str(work_dir) else work_dir.name
+                calls.append((label, kwargs.get("session_id"), work_dir, prompt))
+                if label == "meta_harness":
+                    agents = work_dir / "agents"
+                    agents.mkdir(parents=True, exist_ok=True)
+                    (agents / "candidate.txt").write_text("meta-winner", encoding="utf-8")
+                    pending = work_dir / "state" / "pending_eval_iter1.json"
+                    pending.parent.mkdir(parents=True, exist_ok=True)
+                    pending.write_text(
+                        '{"candidates":[{"name":"candidate","file":"agents/candidate.txt"}]}\n',
+                        encoding="utf-8",
+                    )
+                return AgentRunResult(
+                    final_text="```\ncontinuation\n```",
+                    session_id="session-1",
+                    input_tokens=1,
+                    output_tokens=1,
+                    cost_usd=0.0,
+                    returncode=0,
+                    command=("fake",),
+                    stdout="",
+                    stderr="",
+                )
+
+            def close(self) -> None:
+                return
+
+        gepa_result = SimpleNamespace(best_candidate="gepa-winner", best_score=0.2, metadata={})
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            patch.object(omni_pipeline, "run_optimization", return_value=gepa_result) as gepa_run,
+        ):
+            root = Path(temp)
+            result = omni_pipeline.run_omni(
+                "seed",
+                task={
+                    "evaluator": lambda candidate, _example: (1.0 if candidate == "meta-winner" else 0.1, {}),
+                    "dataset": [1],
+                    "test_set": ["held-out"],
+                },
+                max_evals=8,
+                max_token_cost=None,
+                run_dir=root / "runs",
+                output_dir=root / "outputs",
+                continuation_engine="best_of_n",
+                native_runner_factory=lambda **kwargs: Runner(**kwargs),
+                max_n=1,
+                max_iterations=1,
+            )
+
+        self.assertEqual(len(result.metadata["omni"]["branches"]), 3)
+        self.assertEqual(
+            [branch["engine"] for branch in result.metadata["omni"]["branches"]],
+            ["gepa", "autoresearch", "meta_harness"],
+        )
+        self.assertEqual(result.metadata["omni"]["continuation_engine"], "best_of_n")
+        self.assertEqual(gepa_run.call_count, 1)
+        self.assertNotIn("test_set", gepa_run.call_args.kwargs["task"])
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(calls[-1][0], "continuation")
+        autoresearch_prompt = next(prompt for label, _session, _work_dir, prompt in calls if label == "autoresearch")
+        self.assertIn("seed", autoresearch_prompt)
+        self.assertIn("Improve the candidate", autoresearch_prompt)
+        meta_prompt = next(prompt for label, _session, _work_dir, prompt in calls if label == "meta_harness")
+        self.assertIn("Meta-Harness task", meta_prompt)
+        self.assertIn("seed", meta_prompt)
+        self.assertNotIn("test_set", json.dumps(result.metadata["omni"]))
 
 
 if __name__ == "__main__":

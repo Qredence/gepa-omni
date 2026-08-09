@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Run a bounded GEPA self-evaluation for the Codex proposer.
+"""Run a bounded GEPA self-evaluation for the Chat Completions proposer.
 
 The harness executes generated candidate source in a clean, temporary fixture.
 This is a trusted-development operation and requires the explicit
 ``--allow-candidate-execution`` flag. It never writes candidates into the
 checkout. Run it from an environment that has ``gepa[full]``, ``pytest``,
-``ruff``, and the Codex CLI:
+``ruff``, and the OpenAI-compatible Chat Completions environment:
 
-    uv run --with "gepa[full] @ git+https://<maintained-fork>/<org>/<repo>.git@<commit>" \
+    uv run --with "gepa[full]==0.1.4" \
         python skills/gepa-omni-skill/scripts/self_evaluate.py \
         --allow-candidate-execution \
-        --model <codex-model> \
         --plugin-eval-command "node /path/to/plugin-eval.js"
+
+Set ``OPENAI_BASE_URL``, ``OPENAI_MODEL``, and ``OPENAI_API_KEY`` before running.
 """
 
 from __future__ import annotations
@@ -314,12 +315,16 @@ def _print_json(value: dict[str, Any]) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", required=True, help="Explicit Codex model for proposals")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="legacy model hint; OPENAI_MODEL is authoritative",
+    )
     parser.add_argument(
         "--timeout-seconds",
         type=float,
         default=600.0,
-        help="Per-proposal Codex timeout (default: 600)",
+        help="Per-proposal Chat Completions timeout (default: 600)",
     )
     parser.add_argument(
         "--check-timeout-seconds",
@@ -405,7 +410,7 @@ def main(argv: list[str] | None = None) -> int:
         args.check_timeout_seconds,
     )
     if preflight.returncode != 0 or preflight.timed_out:
-        print("GEPA/Codex preflight failed:", file=sys.stderr)
+        print("GEPA/Chat Completions preflight failed:", file=sys.stderr)
         print(preflight.stdout + preflight.stderr, file=sys.stderr)
         return 2
 
@@ -436,15 +441,14 @@ def main(argv: list[str] | None = None) -> int:
         from codex_agent_proposer import CodexAgentProposer
         from gepa.optimize_anything import (
             EngineConfig,
-            OptimizeAnythingConfig,
+            GEPAConfig,
             ReflectionConfig,
             optimize_anything,
         )
+        from gepa.utils import ScoreThresholdStopper
     except ImportError as exc:
         print(
-            "GEPA self-evaluation requires the engine-capable `gepa[full]`; "
-            "provide a maintained engine-capable `gepa[full]` fork pinned to a commit: "
-            f"{exc}",
+            f"GEPA self-evaluation requires the published `gepa[full]==0.1.4` API: {exc}",
             file=sys.stderr,
         )
         return 2
@@ -477,33 +481,26 @@ def main(argv: list[str] | None = None) -> int:
             evaluator=evaluate,
             dataset=[{"phase": "training"}],
             valset=[{"phase": "validation"}],
-            test_set=[{"phase": "held-out"}],
             objective=(
                 "Improve the proposer while preserving its public contract, tests, formatting, and read-only behavior."
             ),
-            config=OptimizeAnythingConfig(
-                engine="gepa",
-                max_evals=args.max_metric_calls,
-                stop_at_score=1.0,
-                max_concurrency=1,
-                run_dir=str(run_dir / "gepa"),
-                output_dir=str(run_dir / "gepa-output"),
-                sandbox=True,
-                engine_config={
-                    "engine": EngineConfig(
-                        seed=0,
-                        max_candidate_proposals=args.max_candidate_proposals,
-                        max_workers=1,
-                        parallel=False,
-                        cache_evaluation=True,
-                    ),
-                    "reflection": ReflectionConfig(
-                        reflection_lm=None,
-                        custom_candidate_proposer=proposer,
-                        module_selector="all",
-                        reflection_minibatch_size=1,
-                    ),
-                },
+            config=GEPAConfig(
+                engine=EngineConfig(
+                    seed=0,
+                    run_dir=str(run_dir / "gepa"),
+                    max_metric_calls=args.max_metric_calls,
+                    max_candidate_proposals=args.max_candidate_proposals,
+                    max_workers=1,
+                    parallel=False,
+                    cache_evaluation=True,
+                ),
+                reflection=ReflectionConfig(
+                    reflection_lm=None,
+                    custom_candidate_proposer=proposer,
+                    module_selector="all",
+                    reflection_minibatch_size=1,
+                ),
+                stop_callbacks=ScoreThresholdStopper(1.0),
             ),
         )
     except Exception as exc:
@@ -534,10 +531,10 @@ def main(argv: list[str] | None = None) -> int:
             "best_valid": best_record.valid,
             "plugin_eval_score": best_record.info["plugin_eval_score"],
             "warning_ids": best_record.info["plugin_eval_warning_ids"],
-            "engine": result.metadata.get("engine"),
-            "engine_best_score": result.best_score,
-            "total_evals": result.total_evals,
-            "output_dir": result.metadata.get("output_dir"),
+            "engine": "gepa",
+            "engine_best_score": getattr(result, "best_score", None),
+            "total_evals": getattr(result, "total_metric_calls", getattr(result, "total_evals", None)),
+            "output_dir": str(run_dir / "gepa"),
             "proposal_error_count": len(errors),
             "run_dir": str(run_dir),
         }

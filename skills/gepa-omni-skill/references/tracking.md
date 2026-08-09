@@ -1,18 +1,21 @@
 # Experiment tracking
 
-Codex proposer calls retain per-proposal input, output, event, and stderr
-files under the configured run directory. This is separate from optional W&B
-or MLflow tracking; provider-specific Codex pricing is not converted into a
-USD metric.
+Chat Completions proposer calls retain per-proposal input, output, and response
+files under the configured run directory. When input/output USD-per-million
+rates are supplied, JSON token telemetry is also accumulated into `usd_cost`.
+This is separate from optional W&B or MLflow tracking.
 
 The GEPA engine logs to **Weights & Biases** and **MLflow** through
-`TrackingConfig`. Pass the GEPA configuration through
-`OptimizeAnythingConfig.engine_config`:
+`TrackingConfig`. Pass it as a top-level field on the published `GEPAConfig`:
+
+Set `OPENAI_BASE_URL`, `OPENAI_MODEL`, and `OPENAI_API_KEY` before running; the
+model name in the example is read from `OPENAI_MODEL`.
 
 ```python
+import os
 from gepa.optimize_anything import (
     EngineConfig,
-    OptimizeAnythingConfig,
+    GEPAConfig,
     ReflectionConfig,
     TrackingConfig,
     optimize_anything,
@@ -23,22 +26,16 @@ result = optimize_anything(
     evaluator=evaluate,
     dataset=trainset,
     valset=valset,
-    config=OptimizeAnythingConfig(
-        engine="gepa",
-        max_evals=300,
-        run_dir="external-runs/my-gepa-run",
-        output_dir="external-runs/my-gepa-run/output",
-        engine_config={
-            "engine": EngineConfig(),
-            "reflection": ReflectionConfig(reflection_lm="anthropic/claude-sonnet-4-6"),
-            "tracking": TrackingConfig(
-                use_wandb=True,
-                wandb_init_kwargs={
-                    "project": "my-gepa-run",
-                    "name": "experiment-1",
-                },
-            ),
-        },
+    config=GEPAConfig(
+        engine=EngineConfig(max_metric_calls=300, run_dir="external-runs/my-gepa-run"),
+        reflection=ReflectionConfig(reflection_lm=os.environ["OPENAI_MODEL"]),
+        tracking=TrackingConfig(
+            use_wandb=True,
+            wandb_init_kwargs={
+                "project": "my-gepa-run",
+                "name": "experiment-1",
+            },
+        ),
     ),
 )
 ```
@@ -70,8 +67,8 @@ counter.
 
 ## Custom hooks
 
-For programmatic observation beyond metric logging, pass `callbacks` inside
-the GEPA `engine_config` mapping. A configured `run_dir` also retains GEPA's
+For programmatic observation beyond metric logging, pass `callbacks` on
+`GEPAConfig`. A configured `EngineConfig.run_dir` also retains GEPA's
 run log, candidate state, and candidate-tree artifacts.
 
 Tracking is currently an engine-specific feature; AutoResearch and

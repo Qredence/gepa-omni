@@ -53,7 +53,7 @@ proposer LLM can too. If `info` is just `{"score": 0.0}`, the search is blind.
   evaluator. Same calling convention as `print()`; output is captured per-eval (thread-safe) and
   auto-included in the feedback under `info["log"]`. For child threads, propagate the context via
   `oa.get_log_context()` / `oa.set_log_context()`.
-- **`capture_stdio`** — set `OptimizeAnythingConfig(engine="gepa", engine_config={"engine": EngineConfig(capture_stdio=True)})` and
+- **`capture_stdio`** — set `GEPAConfig(engine=EngineConfig(capture_stdio=True), ...)` and
   any `print()`/stdout/stderr during evaluation lands in the feedback under `"stdout"`/`"stderr"` —
   useful for wrapping existing scripts with no code changes. (Doesn't catch C-extension or
   subprocess output that bypasses Python's `sys.stdout`; route that through `oa.log()`.)
@@ -90,7 +90,7 @@ def evaluate(candidate, example, N=4):
     score = sum(scores) / len(scores)  # mean correctness ~ pass@1 estimate
     return score, {"score": score, "n": N, "samples": [{"out": o, "s": s} for o, s in zip(outs, scores)]}
 ```
-Trade-off: N× more eval calls (budget). Pick N to balance variance vs `OptimizeAnythingConfig.max_evals`.
+Trade-off: N× more eval calls (budget). Pick N to balance variance vs `EngineConfig.max_metric_calls`.
 
 ## Multi-objective optimization (e.g. correctness AND speed)
 GEPA can keep an objective-level Pareto front. To use it, **return per-objective metrics under
@@ -103,8 +103,8 @@ return score, {
     ...
 }
 ```
-For the GEPA engine, pass `EngineConfig(frontier_type="hybrid")` under
-`OptimizeAnythingConfig(engine_config={"engine": ...})`. Hybrid is the default
+For the GEPA engine, pass `EngineConfig(frontier_type="hybrid")` inside
+`GEPAConfig(engine=...)`. Hybrid is the default
 (instance- and objective-level fronts combined); `"objective"`, `"instance"`,
 and `"cartesian"` are the alternatives. The scalar `score` still drives final
 selection; the per-objective scores shape the frontier that candidates are
@@ -125,7 +125,7 @@ Then the only way to raise the score is to be correct **and** better on what you
 
 ## Determinism & robustness
 - Make `evaluate` side-effect-free and resumable; it may run concurrently
-  (`OptimizeAnythingConfig.max_concurrency`) and be retried.
+  (`EngineConfig.max_workers`) and be retried.
 - Set a seed in the GEPA engine's nested `EngineConfig(seed=0)` for reproducible
   search order.
 - Log your own per-eval record (id, score, sub-metrics, candidate hash) — you'll want it for

@@ -5,15 +5,14 @@ description = "Developer tooling and tests for the GEPA Omni plugin."
 requires-python = ">=3.10"
 dependencies = []
 
-# GEPA is deliberately supplied by the consuming environment. The Omni
-# engines require the maintained engine-capable fork, whose URL and commit
-# are deployment configuration rather than a dependency of this repository.
+# The plugin targets the published GEPA 0.1.4 API for reflective GEPA. The
+# AutoResearch, Meta-Harness, and Best-of-N runtimes ship in the skill itself.
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "ruff>=0.15.2",
-    "gepa[full]"
+    "gepa[full]==0.1.4"
 ]
 
 [tool.pytest.ini_options]

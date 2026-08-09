@@ -1,142 +1,96 @@
-# Omni workflow — portfolio exploration plus fresh continuation
+# Omni workflow
 
-GEPA Omni's normal optimization workflow is the upstream Omni strategy: explore
-with three different search engines, select the best result, then give that
-winner to a fresh continuation optimizer. It is a portfolio-and-continuation
-workflow, not a task classifier that guesses which single engine to use.
+Omni is the plugin's default orchestration layer. It runs the standalone
+`gepa==0.1.4` PyPI reflective GEPA engine beside the plugin-native AutoResearch
+and Meta-Harness engines, chooses the strongest Phase 1 candidate, then starts
+a fresh Phase 2 continuation. The plugin-native `best_of_n` engine is the
+independent comparison baseline for standalone runs. `omni` is a preflight
+target and workflow mode, not a public PyPI `engine=` value.
+
+## Phases
 
 ```text
-shared seed + evaluator + objective + dataset/valset
-                         │
-           Phase 1: optimize_best_of (parallel)
-          ┌──────────────┼────────────────┐
-          │              │                │
-       gepa        autoresearch      meta_harness
-   selected proposer Codex, persistent Codex, fresh sessions
-          └──────────────┼────────────────┘
-                         │ highest-scoring best_candidate
-                         ▼
-           Phase 2: fresh optimize_anything
-             default: gepa + Codex proposer
-                         │
-                         ▼
-               final candidate + test_set report
+seed + evaluator
+       |
+       +--> Phase 1: gepa (PyPI reflective engine)
+       +--> Phase 1: autoresearch (plugin-native)
+       +--> Phase 1: meta_harness (plugin-native)
+                    |
+             best Phase 1 candidate
+                    |
+       Phase 2: fresh continuation (gepa by default)
+                    |
+             candidate + scores + held-out report
 ```
 
-## Default behavior
-
-For a normal “optimize this” request, omit an engine override and use the
-internal `scripts/omni_pipeline.py` orchestration. It calls the existing
-`optimize_best_of` and `optimize_anything` composition primitives; it does not
-introduce a public optimizer API.
-
-The shared task is passed unchanged to all engines except that `test_set` is
-removed from Phase 1. The Phase 1 winner is passed as the string seed of a new
-Phase 2 config. The default continuation is fresh GEPA (`engine="gepa"`) with
-`CodexAgentProposer`, so the default local flow is “Omni-GEPA”. A caller may
-explicitly set `continuation_engine="autoresearch"` or
-`continuation_engine="meta_harness"`; those continuations use the selected
-backend, Codex by default. Pass `agent_backend="pi"` or
-`agent_backend="claude"` for an explicit alternative.
-
-Conceptually, the public composition calls are:
-
-```python
-explore = optimize_best_of(
-    seed_candidate,
-    evaluator=evaluator,
-    dataset=dataset,
-    valset=valset,
-    objective=objective,
-    configs=[gepa_config, autoresearch_codex_config, meta_harness_codex_config],
-)
-
-final = optimize_anything(
-    explore.best_candidate,
-    evaluator=evaluator,
-    dataset=dataset,
-    valset=valset,
-    objective=objective,
-    test_set=test_set,  # final reporting only
-    config=fresh_continuation_config,
-)
-```
-
-Each Phase 1 config has the same task and an independent external run/output
-directory. `optimize_best_of` performs the parallel branch execution and
-returns the highest-scoring branch winner. Phase 2 constructs a new optimizer
-and new directories; it does not resume any Phase 1 engine state.
+All Phase 1 branches share the same seed, objective, evaluator, dataset, and
+selection `valset`. `test_set` is removed from every Phase 1 task and is used
+only for final held-out scoring by the continuation/wrapper. Phase 2 starts a
+new external run/output directory rather than resuming a Phase 1 branch.
 
 ## Budget partitioning
 
-Omni requires an explicit usable total budget: `max_evals`,
-`max_token_cost`, or both. Each supplied budget is divided independently into
-four balanced slices—one for each Phase 1 engine and one for the continuation.
-For integer `max_evals`, an indivisible remainder is assigned to the
-continuation so no evaluation allowance is lost. Every slice must be positive;
-for example, an evaluation-only Omni run needs at least four evaluations. A
-budget that cannot produce four positive slices should use an explicit
-standalone engine instead.
-
-`stop_at_score` is copied to each phase. It can end a phase early, but it does
-not change the configured four-way allocation. Keep the total budget large
-enough for meaningful proposal rounds; four tiny slices are a valid error
-avoidance mechanism, not a useful optimization plan.
-
-## Backend-specific models
-
-Pass `codex_model` or `pi_model` to the Omni helper to use an explicit model
-throughout GEPA, AutoResearch, Meta-Harness, and the fresh continuation:
-
 ```python
-run_omni(..., agent_backend="codex", codex_model="gpt-5-codex")
-run_omni(..., agent_backend="pi", pi_model="provider/model")
+from omni_pipeline import run_omni
+
+result = run_omni(
+    seed_candidate,
+    task=task,
+    max_evals=40,
+    max_token_cost=20.0,
+    run_dir="/tmp/omni-run",
+    output_dir="/tmp/omni-output",
+    continuation_engine="gepa",
+)
 ```
 
-Codex resolves `codex_model` → legacy `agent_model` → the Codex CLI default.
-Pi resolves `pi_model` → legacy `agent_model` → the Pi provider default. The
-other backend-specific field is ignored. Claude remains an explicit agentic
-backend and uses `agent_model`; it is never selected implicitly as a fallback.
+The total evaluation and token budgets are divided into three exploration
+slices and one continuation slice; evaluation remainders go to the
+continuation. An explicit positive `max_evals` and/or `max_token_cost` is
+required. When `max_evals` is the only bound, at least four evaluations are
+needed so every phase receives a positive slice. Use a standalone engine when
+the budget cannot support four phases.
 
-To enable GEPA's parallel P×N proposal strategy, pass
-`gepa_parallel_proposals=(parents, mutations)` and a suitable
-`max_concurrency`. The helper supplies `PxNSampling` and `AllImprovements` to
-GEPA. Omitting the option retains the sequential one-worker configuration.
+## Continuation choices
 
-## Data-set boundaries
+The default continuation is `gepa`, using the PyPI reflective engine and the
+read-only Chat Completions proposer. Set `continuation_engine="autoresearch"` or
+`continuation_engine="meta_harness"` to use a plugin-native agent continuation.
+Standalone `run_optimization(..., engine=...)` bypasses Omni and receives the
+full supplied budget.
 
-Use `dataset` and `valset` for optimization and selection according to the
-standard launcher contract. Hold `test_set` out of all three Phase 1 calls and
-include it only in the final Phase 2 call. Report its score separately from
-the selection score. This prevents the portfolio winner from being selected on
-the held-out result.
+## Backend and model selection
 
-## Runtime substitutions
+```bash
+export OPENAI_BASE_URL="https://api.openai.com/v1"
+export OPENAI_MODEL="your-model"
+export OPENAI_API_KEY="your-api-key"
+```
 
-- `gepa`: `CodexAgentProposer` for `agent_backend="codex"` or
-  `PiAgentProposer` for `agent_backend="pi"`, with read-only proposal isolation
-  and structured `new_texts` validation.
-- `autoresearch`: the selected explicit agent backend with one persisted session
-  for Ralph-style continuation. Codex uses `--sandbox workspace-write` in the
-  external engine workspace.
-- `meta_harness`: the selected explicit agent backend with fresh ephemeral
-  sessions per iteration and persistent frontier/workspace state.
+`agent_backend` remains a compatibility label for `codex`, `pi`, or `claude`.
+`OPENAI_MODEL` is authoritative for all branches; there is no provider-specific
+model or CLI login resolution.
 
-Run `preflight.py --engine omni` before a live Omni run. The
-`omni` value is a preflight target that checks the complete runtime surface; it
-is not a value to pass as the launcher's `engine=`. OS sandbox prerequisites,
-the maintained GEPA fork's selected agent runner, the selected CLI, and
-credentials must be available in the consumer environment. When
-`max_token_cost` is configured for Codex, also pass both Codex pricing rates to
-preflight. No model calls are made by preflight unless explicitly requested.
+The wrapper also preserves `codex_command`, `pi_command`,
+`codex_timeout_seconds`, `codex_input_cost_per_million`,
+`codex_output_cost_per_million`, `max_concurrency`,
+`gepa_parallel_proposals`, and `stop_at_score`. Codex input/output rates are
+required together when a Codex token cap is configured.
 
-## Standalone overrides
+## Runtime prerequisites
 
-Use an explicit `engine="gepa"`, `engine="autoresearch"`,
-`engine="meta_harness"`, or `engine="best_of_n"` when comparing one backend,
-debugging a branch, or when the total budget is too small for four slices.
-Standalone runs use the full supplied budget and bypass both Omni phases. The
-plugin does not infer an engine from the task.
+Run the local preflight before a real Omni run:
 
-The upstream conceptual source for this two-phase strategy is the [Optimize
-Anything Omni announcement](https://gepa-ai.github.io/gepa/blog/2026/07/22/optimize-anything-omni/).
+```bash
+python3 skills/gepa-omni-skill/scripts/preflight.py --engine omni
+python3 skills/gepa-omni-skill/scripts/preflight.py \
+  --engine omni --agent-backend pi
+```
+
+Preflight verifies the published GEPA API, plugin-native runtime primitives,
+and the three `OPENAI_*` variables. `sandbox=False` is rejected at the wrapper
+boundary, and the Chat Completions model receives no local tools.
+
+Keep every `run_dir` and `output_dir` absolute and outside the checkout. Native
+evaluation artifacts include per-evaluation JSON, `eval_trace.jsonl`, progress,
+and a serializable `result.json`.

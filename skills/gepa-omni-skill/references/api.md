@@ -1,76 +1,88 @@
 # API reference — `optimize_anything`
 
-The public entry point is `gepa.optimize_anything.optimize_anything`. This
-reference follows upstream `main` at
-`ba30ee24e8f63dfdb9e557ed8cfaaec7aa09a6df` while documenting the maintained
-fork's Codex/Pi adapters supplied by this plugin.
+There are two intentionally distinct API layers:
+
+1. The published `gepa==0.1.4` package exposes the standalone reflective
+   `optimize_anything()` engine.
+2. This plugin exposes `run_optimization()` and `run_omni()` for the native
+   AutoResearch, Meta-Harness, Best-of-N, and two-phase Omni workflows.
+
+The native runtime is checked in under `scripts/native_omni/` and is independent
+of the installed GEPA package. Its pinned MIT provenance is recorded in
+[`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
 
 ## Mental model
 
-`optimize_anything` is a general black-box optimization tool. GEPA is one
-specific backend (`engine="gepa"`) and also the name of the Python package
-that ships the launcher and other engines.
+`optimize_anything` is black-box optimization over a candidate. The evaluator
+returns a higher-is-better score plus optional feedback; the search engine uses
+that feedback to propose and select candidates. A budget bounds evaluator calls
+and, for agentic plugin engines, model-token spend.
 
-Four pieces make up a run:
+The direct PyPI API has no top-level `engine=` selector. It is the reflective
+GEPA engine. Engine selection belongs to the plugin wrapper, where `gepa` means
+the PyPI reflective engine and `autoresearch`, `meta_harness`, and `best_of_n`
+mean plugin-native engines.
 
-1. **Candidate** — the text artifact being optimized.
-2. **Evaluator** — a callable that scores a candidate and returns optional
-   feedback. The backend never sees metric internals or gradients; it only
-   sees the candidate, score, and `info` you return.
-3. **Engine** — the search backend that proposes candidates and chooses among
-   evaluated candidates.
-4. **Budget** — evaluation calls and/or proposer-model spend that bound the
-   run.
-
-The evaluator is the quality bottleneck. Return concrete failures, outputs,
-diffs, and partial-credit signals in `info`, not only a scalar.
-
-## Public signature
+## Published PyPI GEPA API
 
 ```python
-from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
+from gepa.optimize_anything import GEPAConfig, optimize_anything
 
 result = optimize_anything(
-    seed_candidate: str | None = None,
-    *,
-    evaluator=None,
+    seed_candidate="candidate text",
+    evaluator=evaluate,
     batch_evaluator=None,
-    dataset=None,
-    valset=None,
-    objective=None,
-    background=None,
-    test_set=None,
-    config=OptimizeAnythingConfig(...),
+    dataset=dataset,
+    valset=valset,
+    objective="Improve the candidate against the evaluator.",
+    background="Optional context for a seedless run.",
+    config=GEPAConfig(...),
 )
 ```
 
-`seed_candidate` is a **single string** at this high-level API. `None` is a
-seedless run when the selected engine can bootstrap from `objective` and
-`background`. Examples in `dataset`, `valset`, and `test_set` are opaque
-objects understood by the evaluator.
+`seed_candidate` may be a string, a named component mapping, or `None` when the
+engine can bootstrap from `objective` and `background`. Examples in `dataset`
+and `valset` are opaque values passed to the evaluator. The direct PyPI call has
+no `test_set` parameter.
 
-The lower-level
-`gepa.gepa_launcher.optimize_anything` API can represent named multi-component
-dictionary candidates. The local development self-evaluation harness may also
-pass a one-component mapping to the pinned fork when its custom-proposer
-bridge requires named components. That is an explicitly scoped local
-compatibility extension, not a change to the public string-candidate launcher
-contract. The Codex/Pi proposer itself keeps the separate component contract:
+The published configuration is nested and strict:
 
 ```python
-proposer(candidate, reflective_dataset, components_to_update, *, metadata=None)
-    -> dict[str, str]
+import os
+from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig
+
+config = GEPAConfig(
+    engine=EngineConfig(
+        max_metric_calls=300,
+        max_workers=16,
+        run_dir="/tmp/gepa-run",
+    ),
+    reflection=ReflectionConfig(
+        reflection_lm=os.environ["OPENAI_MODEL"],
+        reflection_minibatch_size=5,
+    ),
+)
 ```
 
-## Evaluator contract
+Important PyPI fields:
 
-In single-task mode, use `evaluator(candidate)`. With a `dataset` or `valset`,
-use `evaluator(candidate, example)`:
+- `EngineConfig.max_metric_calls` bounds evaluation calls.
+- `EngineConfig.max_workers` and `parallel` control proposal concurrency.
+- `EngineConfig.max_reflection_cost` optionally bounds reflection spend.
+- `GEPAConfig.stop_callbacks` carries score or other stopping policies.
+- `EngineConfig.run_dir` stores GEPA state and diagnostics. PyPI 0.1.4 does
+  not take a direct `output_dir` argument.
+
+Unknown or misspelled fields raise `TypeError`; do not pass the plugin wrapper's
+`max_evals`, `max_token_cost`, `engine_config`, or `output_dir` fields to this
+direct API.
+
+## Evaluator and data splits
 
 ```python
 def evaluate(candidate: str, example) -> tuple[float, dict]:
     output = run_system(candidate, example)
-    score = grade(output, example)  # higher is better
+    score = grade(output, example)
     return score, {
         "output": output,
         "expected": example.get("gold"),
@@ -78,399 +90,163 @@ def evaluate(candidate: str, example) -> tuple[float, dict]:
     }
 ```
 
-A bare float is accepted by the launcher, but it gives the proposer no
-feedback. Prefer `(score, info)` and make `info` actionable. When evaluation
-is more efficient in batches, `batch_evaluator` accepts a list of
-`(candidate, example)` pairs and returns one score or score/info result per
-pair in the same order.
+Use `evaluator(candidate)` for a single task and
+`evaluator(candidate, example)` with `dataset` or `valset`. A bare float is
+accepted, but `(score, info)` gives the proposer useful failure details.
 
-## Optimization modes and data splits
+`batch_evaluator` accepts a list of `(candidate, example)` pairs and must return
+one score or `(score, info)` result per pair in the same order. The plugin-native
+evaluation server applies the same normalization and enforces batch cardinality.
 
-The mode is implicit in the data arguments:
-
-| mode | configuration | evaluator call | selection behavior |
-| --- | --- | --- | --- |
-| Single-task | `dataset=None, valset=None` | `evaluator(candidate)` | Solve one hard problem. |
-| Multi-task | `dataset=[...]`, `valset=None` | `evaluator(candidate, example)` | Score and select on the shared dataset. |
-| Generalization | `dataset=[...]`, `valset=[...]` | `evaluator(candidate, example)` | Optimize on `dataset`, select on `valset`. |
-
-The `gepa` backend is designed around separate `valset`-based selection. The
-agentic backends fold `valset` into their training/scoring pool; they can still
-generalize, but do not provide the same separate selection split.
-
-`test_set` is separate from the modes and is reporting-only. It is not shown
-to the optimizer, does not affect selection or budgets, and is evaluated after
-the run for an unbiased comparison. When provided, inspect
-`result.metadata["test_score"]`, `result.metadata["test_scores"]`,
-`result.metadata["baseline_test_score"]`, and
-`result.metadata["baseline_test_scores"]`.
-
-## Configuration and budgets
-
-```python
-config = OptimizeAnythingConfig(
-    engine="gepa",  # or autoresearch, meta_harness, best_of_n
-    max_evals=300,  # evaluation-server cap
-    max_token_cost=5.0,  # proposer/agent USD cap
-    stop_at_score=1.0,  # use when the metric has a known ceiling
-    max_concurrency=16,
-    run_dir="external-runs/example",
-    output_dir="external-runs/example/output",
-    sandbox=True,
-    engine_config={...},
-)
-```
-
-- `max_evals` bounds calls to the evaluation server.
-- `max_token_cost` bounds the optimizer's own reflection or agent-model spend.
-- `stop_at_score` stops as soon as a candidate reaches a known optimum.
-- A wall-clock timeout on the launched process is a useful additional
-  backstop; it is distinct from a per-proposer timeout.
-- If both `max_evals` and `max_token_cost` are `None`, the run is unbounded
-  apart from a warning.
-- `run_dir` stores engine workspaces and state. `output_dir` stores evaluation
-  records and progress logs. Keep both outside the repository for agent runs.
-
-### Size `max_evals` for proposal rounds
-
-Every proposed candidate is evaluated on the full selection set by the `gepa`
-backend and the `best_of_n` baseline. A practical floor is roughly 15–20
-proposal candidates:
-
-```text
-generalization: max_evals ≳ 15–20 × len(valset)
-multi-task:      max_evals ≳ 15–20 × len(dataset)
-single-task:     max_evals ≳ 15–20
-```
-
-The agentic engines decide how to spend their calls, so treat these as a floor
-rather than an exact formula for them. If the run makes only one proposal,
-the budget was too low to be meaningful. Use `max_token_cost` as a second
-bound, especially for agentic engines. If evaluation caching is enabled,
-`max_evals` counts cache misses, so `stop_at_score` and/or
-`max_token_cost` become especially important.
-
-`engine_config` is strict and backend-specific. Unknown or misspelled keys
-raise `TypeError` at construction. Swapping `engine=` requires replacing the
-entire `engine_config` block with keys for that engine.
-
-## Engines
-
-| engine | proposal strategy | runtime |
+| mode | configuration | selection behavior |
 | --- | --- | --- |
-| `gepa` | Reflect on evaluator feedback, mutate candidates, and keep a Pareto frontier. | In-process; use a reflection LM or a custom proposer. |
-| `autoresearch` | Run a long-horizon experiment loop in a candidate workspace. | Codex by default in the plugin; Pi/Claude are explicit alternatives. |
-| `meta_harness` | Propose candidates from frontier/history while the framework evaluates them. | Codex by default in the plugin; Pi/Claude are explicit alternatives. |
-| `best_of_n` | Independently sample candidates and keep the best. | Baseline; no feedback or history. |
+| Single-task | `dataset=None, valset=None` | Solve one hard problem. |
+| Multi-task | `dataset=[...]` | Score and select on the shared dataset. |
+| Generalization | `dataset=[...], valset=[...]` | Optimize on `dataset`, select on `valset`. |
 
-Composition helpers include `optimize_sequential`, `optimize_parallel`,
-`optimize_best_of`, `optimize_vote`, and `optimize_adaptive_sequential`. Reuse
-the same evaluator and pass explicit per-stage budgets. `optimize_vote`
-re-scores branch winners once outside the branch budgets, which is useful when
-engines have different scoring quirks.
+For the plugin wrapper, put held-out examples in `task["test_set"]`. They are
+never exposed through the native agent task endpoint or passed to Phase 1; the
+wrapper scores them after optimization and may expose `metadata["test_score"]`
+and `metadata["test_scores"]`.
 
-## Omni default orchestration
-
-The plugin's default “optimize this” behavior is a two-phase composition built
-from the existing launcher primitives. It is not a new public `engine="omni"`
-backend and it does not classify tasks:
+## Plugin wrapper
 
 ```python
-explore = optimize_best_of(
-    seed_candidate,
-    evaluator=evaluator,
-    dataset=dataset,
-    valset=valset,
-    objective=objective,
-    configs=[
-        gepa_config,  # CodexAgentProposer or PiAgentProposer locally
-        autoresearch_codex_config,  # selected agent_backend
-        meta_harness_codex_config,  # selected agent_backend
-    ],
-)
+from omni_pipeline import run_optimization
 
-result = optimize_anything(
-    explore.best_candidate,
-    evaluator=evaluator,
-    dataset=dataset,
-    valset=valset,
-    objective=objective,
-    test_set=test_set,
-    config=fresh_gepa_config,
-)
-```
-
-All three Phase 1 configs share the same evaluator, objective, dataset, and
-selection `valset`. `test_set` is omitted from Phase 1 and is supplied only to
-the fresh Phase 2 continuation for final reporting. `optimize_best_of` selects
-the highest-scoring branch winner; Phase 2 starts a new optimizer with new
-`run_dir` and `output_dir` paths rather than resuming a branch.
-
-For Omni, split each supplied total budget independently into four balanced
-positive slices: GEPA, AutoResearch, Meta-Harness, and the continuation. An
-integer evaluation remainder goes to the continuation. At least four positive
-evaluations are therefore required when `max_evals` is the only bound, and an
-explicit positive `max_evals` and/or `max_token_cost` is required in every
-case. If the total budget cannot support four slices, use an explicit
-standalone engine instead.
-
-The default continuation is fresh `engine="gepa"` with the Codex proposer
-(“Omni-GEPA”). `continuation_engine="autoresearch"` and
-`continuation_engine="meta_harness"` are explicit alternatives using the
-selected local backend, Codex by default. Pass `agent_backend="pi"` or
-`agent_backend="claude"` for an explicit alternative. An explicit standalone `engine="gepa"`,
-`"autoresearch"`, `"meta_harness"`, or `"best_of_n"` bypasses this
-orchestration and receives the full supplied budget. The local implementation
-is the internal `scripts/omni_pipeline.py` helper; the public launcher remains
-string-candidate-first and its proposer bridge remains component-based only
-inside the Codex/Pi adapter boundary.
-
-### Omni model selection and P×N proposals
-
-The internal Omni helper accepts backend-specific model names and applies the
-selected value to GEPA, AutoResearch, Meta-Harness, and the fresh continuation:
-
-```python
-run_omni(..., agent_backend="codex", codex_model="gpt-5-codex")
-run_omni(..., agent_backend="pi", pi_model="provider/model")
-```
-
-Codex uses `codex_model` → legacy `agent_model` → the Codex CLI default. Pi
-uses `pi_model` → legacy `agent_model` → the Pi provider default. The
-non-selected backend field is ignored. Claude remains explicit and uses
-`agent_model` for its agentic engines; it is not an implicit fallback.
-
-For GEPA's opt-in parallel proposal strategy, pass
-`gepa_parallel_proposals=(parents, mutations)` with a suitable
-`max_concurrency`. The helper places `PxNSampling(p=parents, n=mutations)` and
-`AllImprovements()` in GEPA's `engine` configuration. Omitting the option keeps
-the existing sequential `max_workers=1, parallel=False` settings.
-
-## `gepa` backend and local proposer
-
-The `gepa` backend accepts a `GEPAConfig`-shaped `engine_config` mapping. The
-local Codex or Pi proposer is attached through the reflection configuration:
-
-```python
-from codex_agent_proposer import CodexAgentProposer
-from gepa.optimize_anything import (
-    EngineConfig,
-    OptimizeAnythingConfig,
-    ReflectionConfig,
-    optimize_anything,
-)
-
-SEED_PROMPT = "You are an expert. Solve the task. Output only the answer."
-proposer = CodexAgentProposer(
-    run_dir="external-runs/example/proposer",
-    model="<codex-model>",
-    timeout_seconds=600,
-)
-
-# The public seed is a string. The pinned fork's custom-proposer bridge may
-# internally expose named components to the proposer; see codex.md for that
-# local compatibility boundary.
-result = optimize_anything(
-    seed_candidate=SEED_PROMPT,
-    evaluator=evaluate,
-    dataset=trainset,
-    valset=valset,
-    test_set=testset,
-    objective="Improve the prompt against the evaluator.",
-    config=OptimizeAnythingConfig(
-        engine="gepa",
-        max_evals=300,
-        stop_at_score=1.0,
-        run_dir="external-runs/example/gepa",
-        output_dir="external-runs/example/output",
-        engine_config={
-            "engine": EngineConfig(
-                max_candidate_proposals=20,
-                max_workers=1,
-                parallel=False,
-                cache_evaluation=True,
-            ),
-            "reflection": ReflectionConfig(
-                reflection_lm=None,
-                custom_candidate_proposer=proposer,
-                module_selector="all",
-            ),
-        },
-    ),
-)
-```
-
-The adapter's proposer contract is intentionally component-based. Every
-returned key must exactly match `components_to_update`; every returned value
-must be a string. See `codex.md` for the read-only flags, timeout, and
-diagnostic files.
-
-## Codex-backed agent engines
-
-The plugin's Omni default uses the maintained fork's writable Codex runner for
-both agent engines. GEPA uses the read-only `CodexAgentProposer` when Codex is
-selected and `PiAgentProposer` when Pi is selected.
-
-```python
-codex_agent_settings = {
-    "agent_backend": "codex",
-    "codex_command": "codex",
-    "model": "gpt-5-codex",  # omit to use the authenticated CLI default
-    "codex_input_cost_per_million": 2.0,
-    "codex_output_cost_per_million": 8.0,
-}
-
-When using `run_omni` or `run_optimization`, supply this choice as
-`codex_model`; `agent_model` is retained as its legacy fallback.
-
-autoresearch = OptimizeAnythingConfig(
+result = run_optimization(
+    "candidate text",
+    task={
+        "evaluator": evaluate,
+        "dataset": trainset,
+        "valset": valset,
+        "test_set": heldout,
+        "objective": "Improve the candidate.",
+    },
     engine="autoresearch",
     max_evals=100,
     max_token_cost=5.0,
-    sandbox=True,
-    engine_config={**codex_agent_settings, "ralph": True, "max_no_eval_seconds": 300},
-)
-
-meta_harness = OptimizeAnythingConfig(
-    engine="meta_harness",
-    max_evals=100,
-    max_token_cost=5.0,
-    sandbox=True,
-    engine_config={
-        **codex_agent_settings,
-        "max_iterations": 20,
-        "max_candidates_per_iter": 3,
-        "timeout_seconds": 600,
-    },
+    run_dir="/tmp/gepa-native-run",
+    output_dir="/tmp/gepa-native-output",
+    agent_backend="codex",
 )
 ```
 
-AutoResearch launches one non-ephemeral session, retains its thread id, and
-uses `codex exec resume <thread_id>` for Ralph continuations. Meta-Harness
-starts a fresh ephemeral session per iteration while retaining its shared
-frontier/workspace. Each iteration retains command, thread id, stdout, stderr,
-usage, completion state, and cost estimate under the external run directory.
+`engine="gepa"` routes to PyPI `gepa==0.1.4` and requires its nested
+`GEPAConfig` contract. The other explicit engines are plugin-native and use a
+shared `Task`, `BudgetTracker`, and external evaluation workspace. Omitting
+`engine` selects `run_omni()`.
 
-Codex maps `sandbox=True` to `--sandbox workspace-write` and explicitly enables
-workspace-write network access so the local `eval.sh` server is reachable; it
-rejects `sandbox=False` and never silently escalates to unrestricted host
-access. The workspace is the engine's external temporary/run directory, never
-the repository checkout. If `max_token_cost` is set, both pricing rates are
-required and validated before launch. Without a USD cap, usage-only runs are
-allowed and cost is marked unknown when rates are absent rather than reported
-as a false zero.
+All wrapper `run_dir` and `output_dir` paths must be absolute and outside the
+development checkout. Native results expose `best_candidate`, `best_score`,
+`total_evals`, `eval_log`, and serializable `metadata`; `Result.persist()` writes
+`result.json` to the external output directory.
 
-## Pi-backed agent engines
+## Engine behavior
 
-Pi remains an explicit alternative using the maintained fork's generic runner:
+| engine | implementation | behavior |
+| --- | --- | --- |
+| `gepa` | Published PyPI GEPA plus `CodexAgentProposer` over Chat Completions | Reflect on feedback, mutate candidates, and keep a Pareto-aware frontier. |
+| `autoresearch` | Plugin-native `native_omni` runtime | Long-horizon experiment loop with an optional persistent agent session. |
+| `meta_harness` | Plugin-native `native_omni` runtime | Fresh agent proposals against a persistent frontier/workspace. |
+| `best_of_n` | Plugin-native `native_omni` runtime | Independent candidate samples; keep the highest-scoring candidate. |
+
+The native engines use the same evaluator and budget ledger. `BudgetTracker`
+reserves capacity before concurrent evaluation and raises `BudgetExhausted`
+instead of allowing an over-budget call. Train and validation data are served
+over a loopback-only HTTP API; the held-out split is deliberately unavailable.
+
+## Omni orchestration
+
+The default Omni workflow runs `gepa`, `autoresearch`, and `meta_harness` in
+parallel, chooses the best Phase 1 candidate, and runs a fresh Phase 2
+continuation. `test_set` is withheld from all Phase 1 branches. The default
+continuation is `gepa`; set `continuation_engine` to `autoresearch` or
+`meta_harness` to choose a native continuation.
 
 ```python
-OptimizeAnythingConfig(
-    engine="autoresearch",
-    max_evals=100,
-    max_token_cost=5.0,
-    sandbox=True,
-    run_dir="external-runs/autoresearch",
-    output_dir="external-runs/autoresearch/output",
-    engine_config={
-        "agent_backend": "pi",
-        "pi_command": "pi",
-        "model": "provider/model",
-        "ralph": True,
-        "max_no_eval_seconds": 300,
-    },
+from omni_pipeline import run_omni
+
+result = run_omni(
+    "candidate text",
+    task=task,
+    max_evals=40,
+    max_token_cost=20.0,
+    run_dir="/tmp/omni-run",
+    output_dir="/tmp/omni-output",
+    continuation_engine="gepa",
+    agent_backend="codex",
+    codex_input_cost_per_million=2.0,
+    codex_output_cost_per_million=8.0,
 )
 ```
 
-When using `run_omni` or `run_optimization`, supply the Pi choice as
-`pi_model`; `agent_model` is retained as its legacy fallback.
+The total budget is partitioned into three exploration slices and one
+continuation slice. `max_evals` must be at least four when it is the only bound;
+an explicit positive `max_evals` and/or `max_token_cost` is required.
 
-AutoResearch keeps one persistent Pi RPC process for Ralph continuations.
-Meta-Harness starts a fresh Pi session each iteration while retaining the
-frontier and candidate workspace. Pi requires `jq` and `curl` for
-AutoResearch, plus `bwrap` on Linux or `sandbox-exec` on macOS when
-`sandbox=True`. There is no implicit Claude fallback. See `pi.md`.
+## Backend parameters and sandbox contract
 
-The separate `PiAgentProposer` uses Pi JSON mode with no session, ambient
-context files, extensions, skills, or write tools. It implements the same
-component proposer contract as `CodexAgentProposer`.
+The wrapper preserves these backend parameters:
 
-## Other backend configuration
+- `agent_backend`: `codex` (default), `pi`, or `claude` for native agent loops.
+- `agent_model`, `codex_model`, `pi_model`, and the backend command parameters:
+  retained compatibility fields; `OPENAI_MODEL` and the shared API environment
+  are authoritative.
+- `codex_timeout_seconds`: bounded Chat Completions request timeout.
+- `codex_input_cost_per_million` and `codex_output_cost_per_million`: required
+  together when a Chat Completions `max_token_cost` cap is configured.
+- `max_concurrency`, `gepa_parallel_proposals`, `stop_at_score`, and
+  `continuation_engine` for orchestration and budget control.
 
-`autoresearch` accepts `agent_backend`, `model`, `pi_command` or
-`codex_command`, Codex pricing rates, `ralph`, `max_no_eval_seconds`,
-`handoffs`, and agent-specific effort/thinking settings. `meta_harness` accepts
-the corresponding backend/command/pricing keys, `max_iterations`,
-`max_candidates_per_iter`, `timeout_seconds`, and its agent-specific settings.
-`best_of_n` accepts `model`, `temperature`, `max_n`, `lm_kwargs`, and optional
-effort/thinking settings. Use only keys supported by the selected backend.
+Set `OPENAI_BASE_URL`, `OPENAI_MODEL`, and `OPENAI_API_KEY` for every model
+call. Backend labels are preserved in metadata, but do not select a CLI or a
+different provider.
 
-## Composing engines
+Every wrapper run requires `sandbox=True`; `sandbox=False` is rejected. The
+model receives request text and JSON but no local tools. Run and output paths
+remain external to the checkout.
 
-The task and evaluator can be reused across stages:
+## Codex proposer boundary
 
-```python
-from gepa.optimize_anything import OptimizeAnythingConfig, optimize_sequential
+`CodexAgentProposer` is the read-only Chat Completions adapter used by the PyPI
+`gepa` engine. Each proposal gets a unique external directory and sends the
+materialized context to `/chat/completions`. Its structured result must contain
+`new_texts` whose keys exactly match `components_to_update` and whose values are
+strings. Inputs, output, usage, and errors remain in the proposal directory.
 
-result = optimize_sequential(
-    SEED_PROMPT,
-    evaluator=evaluate,
-    dataset=trainset,
-    valset=valset,
-    objective="Improve the candidate.",
-    configs=[
-        OptimizeAnythingConfig(
-            engine="best_of_n",
-            max_evals=20,
-            max_token_cost=1.0,
-        ),
-        OptimizeAnythingConfig(
-            engine="gepa",
-            max_evals=300,
-            stop_at_score=1.0,
-            max_token_cost=2.0,
-        ),
-    ],
-)
-```
+Native `OpenAIChatCompletionRunner` retains session message history for
+AutoResearch, records API usage/cost, and writes raw responses to an external
+native engine workspace. The old CLI runner classes remain compatibility
+exports but are not constructed by the plugin pipeline.
 
-The sequential helper feeds each stage's best candidate into the next. The
-parallel helpers return results in config order; `optimize_best_of` chooses the
-highest reported score, while `optimize_vote` re-scores branch winners for a
-fair cross-engine choice. `optimize_adaptive_sequential` rotates engines on
-plateaus under a shared evaluation pool. Keep each stage's artifacts external
-and make every budget explicit.
+## Pi and Claude runners
 
-## Results
-
-The launcher returns a `Result` with:
-
-```python
-result.best_candidate  # str
-result.best_score  # float on the selection set
-result.total_evals  # int
-result.eval_log  # list[dict]
-result.metadata  # engine, budgets, costs, and output paths when supplied
-```
-
-The GEPA metadata can include the full `gepa_result`; all engines may expose
-budget, cost, wall-time, `output_dir`, and progress-log details. When `test_set`
-is supplied, keep its `test_score` separate from `best_score`, which is the
-selection-set result.
+`PiAgentProposer` and the `pi`/`claude` backend labels use the same Chat
+Completions client. They retain compatibility names and backend metadata; no
+provider-specific executable or local login is required.
 
 ## Preflight
 
-Use the plugin's extended preflight before a real run:
+Run preflight before a long or live run:
 
 ```bash
-python3 skills/gepa-omni-skill/scripts/preflight.py --engine gepa
-python3 skills/gepa-omni-skill/scripts/preflight.py --engine codex
-python3 skills/gepa-omni-skill/scripts/preflight.py --engine omni
-python3 skills/gepa-omni-skill/scripts/preflight.py --engine omni --agent-backend pi
+uv run python skills/gepa-omni-skill/scripts/preflight.py --engine gepa
+uv run python skills/gepa-omni-skill/scripts/preflight.py \
+  --engine autoresearch --agent-backend codex
+uv run python skills/gepa-omni-skill/scripts/preflight.py \
+  --engine omni --agent-backend pi
 ```
 
-It checks the current launcher, engine registry, composition helpers, the
-selected Codex/Pi proposer and fork-runner surface, credentials, and the
-relevant sandbox prerequisites. For Codex, pass both pricing rates whenever a
-token cap is configured. It does not make model calls unless `--test-lm` is
-explicitly requested.
+Preflight checks the installed PyPI GEPA API for `gepa`/Omni, imports the
+plugin-native runtime for native engines, and verifies
+`OPENAI_BASE_URL`, `OPENAI_MODEL`, and `OPENAI_API_KEY`. It does not call a
+model unless `--test-lm` is supplied.
+
+## Results and tracking
+
+The PyPI result exposes GEPA's native result fields, including the best candidate,
+validation scores, and run directory. The plugin-native `Result` is JSON
+serializable and persists evaluation/trace files under the external output
+directory. Optional W&B/MLflow tracking for PyPI GEPA is documented in
+[`tracking.md`](tracking.md).
