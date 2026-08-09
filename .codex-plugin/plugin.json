@@ -1,6 +1,6 @@
 {
   "name": "gepa-omni",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Optimize scorable prompts, code, configs, schemas, SQL, regexes, and agent instructions with GEPA's Omni portfolio and fresh continuation workflow.",
   "author": {
     "name": "Qredence",
