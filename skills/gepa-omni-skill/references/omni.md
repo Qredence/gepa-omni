@@ -71,6 +71,12 @@ export OPENAI_API_KEY="your-api-key"
 `OPENAI_MODEL` is authoritative for all branches; there is no provider-specific
 model or CLI login resolution.
 
+The interactive skill asks only for a missing model or base URL, applies those
+answers to the current process, and does not persist them. The API key must be
+provided through the environment or a secret manager and is never requested in
+chat. Preflight remains non-interactive and validates the final configuration
+before Omni starts.
+
 The wrapper also preserves `codex_command`, `pi_command`,
 `codex_timeout_seconds`, `codex_input_cost_per_million`,
 `codex_output_cost_per_million`, `max_concurrency`,

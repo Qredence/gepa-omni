@@ -83,6 +83,9 @@ unexpected failures behind a success-shaped result.
 
 - Every model call uses the OpenAI-compatible Chat Completions endpoint from
   `OPENAI_BASE_URL`, `OPENAI_MODEL`, and `OPENAI_API_KEY`.
+- The interactive skill asks only for missing model/base URL values and applies
+  them process-locally; configure `OPENAI_API_KEY` through the environment or a
+  secret manager rather than chat.
 - `agent_backend="codex"`, `"pi"`, or `"claude"` is retained as a runtime
   compatibility label; it does not invoke a provider CLI.
 - When `max_token_cost` is set, both input and output USD-per-million token

@@ -36,6 +36,12 @@ Completions proposer. `pi_model`, `pi_command`, and the old CLI runner classes
 remain source-compatible options, but `OPENAI_MODEL` and the shared API
 environment are authoritative.
 
+When invoked through the interactive skill, Pi uses the same setup gate as
+every other backend: ask only for a missing model or base URL, apply the
+answers to the current process, and run the non-interactive preflight before
+launch. Never request `OPENAI_API_KEY` in chat; configure it through the
+environment or a secret manager.
+
 ## Preflight
 
 ```bash

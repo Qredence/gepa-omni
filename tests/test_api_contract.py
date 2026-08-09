@@ -89,6 +89,17 @@ class ApiContractDocumentationTests(unittest.TestCase):
         ):
             self.assertIn(expected, self.preflight)
 
+    def test_interactive_setup_contract_is_secret_safe_and_process_scoped(self) -> None:
+        for document in (self.skill, self.readme, self.api, self.codex, self.pi, self.omni, self.gotchas):
+            self.assertIn("missing", document.lower())
+            self.assertIn("process", document.lower())
+        normalized_skill = " ".join(self.skill.lower().split())
+        self.assertIn("never ask the user to paste `openai_api_key` into chat", normalized_skill)
+        self.assertIn("do not write prompted values to `.env`", normalized_skill)
+        self.assertIn("preflight remains non-interactive", normalized_skill)
+        self.assertIn("secret manager", self.readme)
+        self.assertIn("never requested", self.api)
+
     def test_mit_provenance_is_pinned_and_packaged(self) -> None:
         self.assertIn("MIT", self.notice)
         self.assertIn("8a2bed96385202f69caaeb5327a843ed2f5ea225", self.notice)

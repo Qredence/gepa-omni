@@ -6,7 +6,9 @@ engine. AutoResearch, Meta-Harness, Best-of-N, and the Omni composition use
 the checked-in ``native_omni`` runtime. All model calls use the same
 OpenAI-compatible Chat Completions endpoint configured by
 ``OPENAI_BASE_URL``, ``OPENAI_MODEL``, and ``OPENAI_API_KEY``. This command
-does not make a model call unless ``--test-lm`` is explicitly requested.
+does not prompt for configuration or make a model call unless ``--test-lm`` is
+explicitly requested. The interactive setup gate is defined by the skill; API
+keys must be supplied through the environment or a secret manager.
 """
 
 from __future__ import annotations
@@ -45,9 +47,21 @@ def _check_chat_completions_config() -> bool:
     base_configured = bool(base_url)
     model_configured = bool(model)
     key_configured = bool(api_key)
-    check("OPENAI_BASE_URL is configured", base_configured, "export OPENAI_BASE_URL to an HTTP(S) API base URL")
-    check("OPENAI_MODEL is configured", model_configured, "export OPENAI_MODEL with the deployed model name")
-    check("OPENAI_API_KEY is configured", key_configured, "export OPENAI_API_KEY")
+    check(
+        "OPENAI_BASE_URL is configured",
+        base_configured,
+        "set OPENAI_BASE_URL in the current process; the skill asks for it when missing",
+    )
+    check(
+        "OPENAI_MODEL is configured",
+        model_configured,
+        "set OPENAI_MODEL in the current process; the skill asks for it when missing",
+    )
+    check(
+        "OPENAI_API_KEY is configured",
+        key_configured,
+        "configure OPENAI_API_KEY through the environment or a secret manager; do not provide it in chat",
+    )
     valid_scheme = base_url.startswith(("http://", "https://"))
     check(
         "OPENAI_BASE_URL uses HTTP(S)",
