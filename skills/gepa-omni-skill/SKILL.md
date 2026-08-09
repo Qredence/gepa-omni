@@ -128,6 +128,35 @@ with `AllImprovements`; otherwise Omni keeps its sequential one-worker GEPA
 configuration. Set `max_concurrency` high enough to support the requested parallel
 proposals.
 
+### Interactive provider setup
+
+Before launching any live optimization, check whether the current process has
+`OPENAI_MODEL`, `OPENAI_BASE_URL`, and `OPENAI_API_KEY` configured. Preserve any
+values that are already present. When `OPENAI_MODEL` or `OPENAI_BASE_URL` is
+missing, ask the user for only the missing value(s), then use the answers as
+process-scoped environment values for the current run:
+
+```bash
+env OPENAI_MODEL="$selected_model" OPENAI_BASE_URL="$selected_base_url" \
+  uv run python skills/gepa-omni-skill/scripts/preflight.py --engine omni
+```
+
+For an in-process Python call, apply the same values temporarily around the
+`run_optimization()` call and restore the previous environment afterward. Do
+not write prompted values to `.env`, the repository, shell profiles, or any
+other persistent configuration.
+
+Never ask the user to paste `OPENAI_API_KEY` into chat. If it is missing, stop
+before running preflight or an optimizer and instruct the user to configure it
+through the environment or a secret manager. Do not print, persist, or include
+the key in diagnostics, metadata, prompts, or error messages.
+
+Run preflight with the final process-scoped configuration before launching the
+optimizer. Preflight remains non-interactive and does not make a model call
+unless `--test-lm` is explicitly requested. The prompted model must be supplied
+as `OPENAI_MODEL`, because it is authoritative for GEPA, AutoResearch,
+Meta-Harness, Best-of-N, and all compatibility backend labels.
+
 ## Workflow
 
 1. Define the candidate, the real goal, the score ceiling if one exists, and the

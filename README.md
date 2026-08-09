@@ -177,6 +177,13 @@ export OPENAI_API_KEY="your-api-key"
 runtime/session metadata. `OPENAI_MODEL` is authoritative, and the three
 `OPENAI_*` variables are used for every model call.
 
+When the plugin is invoked through its interactive skill, it asks only for a
+missing model or base URL and uses those answers for the current process only.
+It does not write them to `.env` or any persistent configuration. The API key
+must already be supplied through the environment or a secret manager; the
+plugin never asks for an API key in chat. Preflight remains non-interactive and
+must run with the final process-scoped values before optimization.
+
 For GEPA P×N proposal sampling, pass
 `gepa_parallel_proposals=(parents, mutations)` with a suitable
 `max_concurrency`. Omitting it retains the sequential one-worker configuration.
@@ -192,8 +199,8 @@ For GEPA P×N proposal sampling, pass
 - When using `max_token_cost`, both input and output USD-per-million
   token rates.
 
-Preflight checks the shared API configuration and native runtime before a live run. It never performs a model call
-unless `--test-lm` is explicitly supplied:
+Preflight checks the shared API configuration and native runtime before a live run. It never prompts for configuration
+or performs a model call unless `--test-lm` is explicitly supplied:
 
 ```bash
 uv run python skills/gepa-omni-skill/scripts/preflight.py \

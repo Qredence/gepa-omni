@@ -101,6 +101,28 @@ class PreflightTests(unittest.TestCase):
         self.assertIn("OPENAI_MODEL", text)
         self.assertIn("OPENAI_API_KEY", text)
 
+    def test_missing_api_key_remediation_is_secret_safe(self) -> None:
+        self._configure_api()
+        secret = os.environ.pop("OPENAI_API_KEY")
+        output = io.StringIO()
+        with patch.dict(sys.modules, fake_gepa_modules()), redirect_stdout(output):
+            result = preflight.main(["--engine", "autoresearch"])
+
+        self.assertEqual(result, 1)
+        text = output.getvalue()
+        self.assertIn("environment or a secret manager", text)
+        self.assertIn("do not provide it in chat", text)
+        self.assertNotIn(secret, text)
+
+    def test_preflight_is_non_interactive_when_configuration_is_complete(self) -> None:
+        self._configure_api()
+        output = io.StringIO()
+        with patch.dict(sys.modules, fake_gepa_modules()), patch("builtins.input", side_effect=AssertionError), redirect_stdout(output):
+            result = preflight.main(["--engine", "autoresearch"])
+
+        self.assertEqual(result, 0)
+        self.assertIn("All preflight checks passed", output.getvalue())
+
     def test_invalid_chat_completions_base_url_fails(self) -> None:
         self._configure_api()
         os.environ["OPENAI_BASE_URL"] = "llm.example/v1"

@@ -203,6 +203,13 @@ Set `OPENAI_BASE_URL`, `OPENAI_MODEL`, and `OPENAI_API_KEY` for every model
 call. Backend labels are preserved in metadata, but do not select a CLI or a
 different provider.
 
+When the plugin is invoked through the interactive skill, it asks only for a
+missing `OPENAI_MODEL` or `OPENAI_BASE_URL` and applies the answers to the
+current process. It never persists prompted values. `OPENAI_API_KEY` must be
+configured through the environment or a secret manager and is never requested
+in chat. Preflight remains non-interactive and validates the final environment
+before launch.
+
 Every wrapper run requires `sandbox=True`; `sandbox=False` is rejected. The
 model receives request text and JSON but no local tools. Run and output paths
 remain external to the checkout.
