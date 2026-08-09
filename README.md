@@ -23,6 +23,28 @@ and runs them together in a two-phase **Omni** workflow.
 > `gepa-omni`, and the shipped skill is `gepa-omni-skill`. These are separate
 > identities by design.
 
+## Quick start
+
+### Codex
+
+Add the GitHub repository as a Codex marketplace, then install the plugin:
+
+```bash
+codex plugin marketplace add Qredence/gepa-omni
+codex plugin add gepa-omni@Qredence
+```
+
+Start a new Codex task after installation so the skill loads. Invoke it by
+naming the skill and describing the candidate and evaluator:
+
+```text
+Use $gepa-omni-skill to improve this prompt against my evaluator. Preserve the
+output format and report the held-out score separately.
+```
+
+The skill can also help design a feedback-rich evaluator or compare the GEPA,
+AutoResearch, and Meta-Harness engines.
+
 ## Origin: GEPA Anything
 
 GEPA Omni is a derivative of **GEPA Anything** — the `optimize_anything` API of
@@ -66,26 +88,6 @@ different agent runtimes without duplication:
 `--format codex` emits `.codex-plugin/` + `skills/` + `LICENSE`.
 
 ## Install
-
-### Codex
-
-Add the GitHub repository as a Codex marketplace, then install the plugin:
-
-```bash
-codex plugin marketplace add Qredence/gepa-omni
-codex plugin add gepa-omni@Qredence
-```
-
-Start a new Codex task after installation so the skill loads. Invoke it by
-naming the skill and describing the candidate and evaluator:
-
-```text
-Use $gepa-omni-skill to improve this prompt against my evaluator. Preserve the
-output format and report the held-out score separately.
-```
-
-The skill can also help design a feedback-rich evaluator or compare the GEPA,
-AutoResearch, and Meta-Harness engines.
 
 ### Portable bundle
 
