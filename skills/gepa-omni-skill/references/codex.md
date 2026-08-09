@@ -16,6 +16,12 @@ export OPENAI_API_KEY="your-api-key"
 backend command parameters remain accepted for source compatibility, but they
 do not select a different provider or executable.
 
+The interactive skill asks for a missing model or base URL before a live run
+and supplies those values only to the current process. It never asks for
+`OPENAI_API_KEY` in chat; configure that key through the environment or a
+secret manager. Preflight remains non-interactive and must validate the final
+environment before launch.
+
 ## Read-only GEPA proposer
 
 `CodexAgentProposer` implements:
