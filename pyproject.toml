@@ -32,3 +32,4 @@ max-complexity = 18
 
 [tool.uv]
 package = false
+override-dependencies = ["cryptography>=50.0.0"]
