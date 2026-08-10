@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "component": "gepa-omni-plugin-native-runtime",
+  "upstream": {
+    "project": "gepa-ai/gepa",
+    "repository": "https://github.com/gepa-ai/gepa",
+    "commit": "8a2bed96385202f69caaeb5327a843ed2f5ea225",
+    "license": "MIT"
+  },
+  "adaptation": {
+    "scope": [
+      "task and evaluation primitives",
+      "runner and budget contracts"
+    ],
+    "independent_runtime": true,
+    "upstream_package_dependency": "gepa[full]"
+  },
+  "files": [
+    "scripts/native_omni/core.py",
+    "scripts/native_omni/runners.py"
+  ]
+}

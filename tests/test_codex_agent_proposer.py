@@ -10,7 +10,14 @@ from urllib.error import HTTPError
 from unittest.mock import patch
 
 # fmt: off
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "skills" / "gepa-omni-skill" / "scripts"
+SCRIPT_DIR = (
+    Path(__file__).resolve().parents[1]
+    / "plugins"
+    / "gepa-omni"
+    / "skills"
+    / "gepa-omni-skill"
+    / "scripts"
+)
 sys.path.insert(0, str(SCRIPT_DIR))
 from codex_agent_proposer import (  # noqa: E402
     CodexAgentProposer,
@@ -82,8 +89,9 @@ class ChatProposerTests(unittest.TestCase):
         return CodexAgentProposer(self.run_dir, **options)
 
     def test_chat_completions_request_and_diagnostics_contract(self) -> None:
-        proposer = self._proposer()
-        result = proposer({"prompt": "seed"}, {"train": [{"score": 1}]}, ["prompt"], metadata={"turn": 1})
+        with patch.dict(os.environ, {"GEPA_OMNI_RETAIN_RAW_RESPONSES": "1"}):
+            proposer = self._proposer()
+            result = proposer({"prompt": "seed"}, {"train": [{"score": 1}]}, ["prompt"], metadata={"turn": 1})
 
         self.assertEqual(result, {"prompt": "improved"})
         self.assertEqual(len(self.calls), 1)
@@ -105,7 +113,7 @@ class ChatProposerTests(unittest.TestCase):
     def test_environment_configuration_is_authoritative(self) -> None:
         os.environ.update(
             {
-                "OPENAI_BASE_URL": "https://env.example/v1",
+                "OPENAI_BASE_URL": "https://api.openai.com/v1",
                 "OPENAI_MODEL": "env-model",
                 "OPENAI_API_KEY": "env-key",
             }
@@ -114,7 +122,7 @@ class ChatProposerTests(unittest.TestCase):
         proposer({"prompt": "seed"}, {}, ["prompt"])
         request, _ = self.calls[0]
         body = json.loads(request.data.decode("utf-8"))
-        self.assertEqual(request.full_url, "https://env.example/v1/chat/completions")
+        self.assertEqual(request.full_url, "https://api.openai.com/v1/chat/completions")
         self.assertEqual(request.get_header("Authorization"), "Bearer env-key")
         self.assertEqual(body["model"], "env-model")
 

@@ -10,7 +10,7 @@ from types import ModuleType
 from unittest.mock import patch
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "skills" / "gepa-omni-skill" / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "plugins" / "gepa-omni" / "skills" / "gepa-omni-skill" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 import preflight  # noqa: E402
 
@@ -24,33 +24,64 @@ class FakeReflectionConfig:
     custom_candidate_proposer = None
 
 
-class FakeGEPAConfig:
+class FakeOptimizeAnythingConfig:
     def __init__(
         self,
         *,
-        engine: FakeEngineConfig | None = None,
-        reflection: FakeReflectionConfig | None = None,
+        engine: str = "gepa",
+        max_evals: int | None = None,
+        max_concurrency: int = 8,
+        engine_config: dict[str, object] | None = None,
         **_kwargs: object,
     ) -> None:
         self.engine = engine
-        self.reflection = reflection
+        self.max_evals = max_evals
+        self.max_concurrency = max_concurrency
+        self.engine_config = engine_config
 
 
 def fake_gepa_modules() -> dict[str, ModuleType]:
     gepa = ModuleType("gepa")
-    gepa.__version__ = "0.1.4"
+    gepa.__version__ = "main-test"
     optimize = ModuleType("gepa.optimize_anything")
-    optimize.GEPAConfig = FakeGEPAConfig
-    optimize.EngineConfig = FakeEngineConfig
-    optimize.ReflectionConfig = FakeReflectionConfig
-    optimize.optimize_anything = lambda **_kwargs: None
+    optimize.OptimizeAnythingConfig = FakeOptimizeAnythingConfig
+
+    def optimize_anything(*, batch_evaluator=None, **_kwargs: object) -> None:
+        del batch_evaluator
+
+    optimize.optimize_anything = optimize_anything
+    strategies = ModuleType("gepa.strategies")
+    sampling = ModuleType("gepa.strategies.proposal_sampling")
+    selection = ModuleType("gepa.strategies.proposal_selection")
+    sampling.PxNSampling = type("PxNSampling", (), {})
+    sampling.SameParentSampling = type("SameParentSampling", (), {})
+    sampling.IndependentSampling = type("IndependentSampling", (), {})
+    selection.AllImprovements = type("AllImprovements", (), {})
+    selection.BestImprovement = type("BestImprovement", (), {})
+    selection.TopKImprovements = type("TopKImprovements", (), {})
     gepa.optimize_anything = optimize
-    return {"gepa": gepa, "gepa.optimize_anything": optimize}
+    return {
+        "gepa": gepa,
+        "gepa.optimize_anything": optimize,
+        "gepa.strategies": strategies,
+        "gepa.strategies.proposal_sampling": sampling,
+        "gepa.strategies.proposal_selection": selection,
+    }
 
 
 class PreflightTests(unittest.TestCase):
     def setUp(self) -> None:
-        self._saved_env = {name: os.environ.get(name) for name in ("OPENAI_BASE_URL", "OPENAI_MODEL", "OPENAI_API_KEY")}
+        self._saved_env = {
+            name: os.environ.get(name)
+            for name in (
+                "OPENAI_BASE_URL",
+                "OPENAI_MODEL",
+                "OPENAI_API_KEY",
+                "GEPA_OMNI_API_KEY",
+                "GEPA_OMNI_API_KEY_ENV",
+                "PROVIDER_KEY",
+            )
+        }
         for name in self._saved_env:
             os.environ.pop(name, None)
 
@@ -65,7 +96,7 @@ class PreflightTests(unittest.TestCase):
     def _configure_api() -> None:
         os.environ.update(
             {
-                "OPENAI_BASE_URL": "https://llm.example/v1",
+                "OPENAI_BASE_URL": "https://api.openai.com/v1",
                 "OPENAI_MODEL": "test-model",
                 "OPENAI_API_KEY": "test-key",
             }
@@ -76,7 +107,7 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(args.engine, "gepa")
         self.assertEqual(args.agent_backend, "codex")
 
-    def test_gepa_pypi_surface_checks_chat_completions_configuration(self) -> None:
+    def test_gepa_latest_surface_checks_chat_completions_configuration(self) -> None:
         self._configure_api()
         output = io.StringIO()
         with patch.dict(sys.modules, fake_gepa_modules()), redirect_stdout(output):
@@ -84,7 +115,7 @@ class PreflightTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         text = output.getvalue()
-        self.assertIn("published API", text)
+        self.assertIn("latest engine-pluggable API", text)
         self.assertIn("OPENAI_BASE_URL is configured", text)
         self.assertIn("shared Chat Completions endpoint", text)
         self.assertNotIn("CLI authentication", text)
@@ -117,7 +148,11 @@ class PreflightTests(unittest.TestCase):
     def test_preflight_is_non_interactive_when_configuration_is_complete(self) -> None:
         self._configure_api()
         output = io.StringIO()
-        with patch.dict(sys.modules, fake_gepa_modules()), patch("builtins.input", side_effect=AssertionError), redirect_stdout(output):
+        with (
+            patch.dict(sys.modules, fake_gepa_modules()),
+            patch("builtins.input", side_effect=AssertionError),
+            redirect_stdout(output),
+        ):
             result = preflight.main(["--engine", "autoresearch"])
 
         self.assertEqual(result, 0)
@@ -147,29 +182,46 @@ class PreflightTests(unittest.TestCase):
         self.assertNotIn("sandbox-exec", text)
         self.assertNotIn("CLI", text)
 
+    def test_provider_specific_key_variable_is_checked_and_accepted(self) -> None:
+        os.environ.update(
+            {
+                "OPENAI_BASE_URL": "https://provider.example/v1",
+                "OPENAI_MODEL": "provider-model",
+                "GEPA_OMNI_API_KEY_ENV": "PROVIDER_KEY",
+                "PROVIDER_KEY": "provider-secret",
+            }
+        )
+        output = io.StringIO()
+        with patch.dict(sys.modules, fake_gepa_modules()), redirect_stdout(output):
+            result = preflight.main(["--engine", "autoresearch"])
+
+        self.assertEqual(result, 0)
+        self.assertIn("PROVIDER_KEY is configured", output.getvalue())
+
     def test_incomplete_chat_pricing_fails(self) -> None:
         self._configure_api()
         output = io.StringIO()
         with redirect_stdout(output):
-            result = preflight.main(
-                ["--engine", "best_of_n", "--codex-input-cost-per-million", "1"]
-            )
+            result = preflight.main(["--engine", "best_of_n", "--codex-input-cost-per-million", "1"])
 
         self.assertEqual(result, 1)
         self.assertIn("pricing is complete", output.getvalue())
 
-    def test_old_or_missing_pypi_api_fails_with_install_guidance(self) -> None:
+    def test_old_or_missing_gepa_api_fails_with_latest_install_guidance(self) -> None:
         self._configure_api()
         old_gepa = ModuleType("gepa")
         old_optimize = ModuleType("gepa.optimize_anything")
         old_optimize.optimize_anything = lambda **_kwargs: None
         old_gepa.optimize_anything = old_optimize
         output = io.StringIO()
-        with patch.dict(sys.modules, {"gepa": old_gepa, "gepa.optimize_anything": old_optimize}), redirect_stdout(output):
+        with (
+            patch.dict(sys.modules, {"gepa": old_gepa, "gepa.optimize_anything": old_optimize}),
+            redirect_stdout(output),
+        ):
             result = preflight.main(["--engine", "gepa"])
 
         self.assertEqual(result, 1)
-        self.assertIn("gepa[full]==0.1.4", output.getvalue())
+        self.assertIn("latest compatible upstream GEPA", output.getvalue())
 
     def test_test_lm_is_opt_in_and_uses_configured_model_label(self) -> None:
         self._configure_api()

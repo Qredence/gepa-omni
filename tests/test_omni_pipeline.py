@@ -9,7 +9,7 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "skills" / "gepa-omni-skill" / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "plugins" / "gepa-omni" / "skills" / "gepa-omni-skill" / "scripts"
 _SCRIPT_DIR_STR = str(SCRIPT_DIR)
 sys.path.insert(0, _SCRIPT_DIR_STR)
 try:
@@ -63,6 +63,22 @@ class PublicResultLauncher:
             val_aggregate_scores=[0.75],
             total_metric_calls=1,
             run_dir="/external/runs/public-gepa",
+        )
+
+
+class CurrentResultLauncher:
+    def __init__(self, config_cls: type[object]) -> None:
+        self.GEPAConfig = config_cls
+        self.kwargs: dict[str, object] = {}
+
+    def optimize_anything(self, seed: str, **kwargs: object) -> SimpleNamespace:
+        self.kwargs = kwargs
+        return SimpleNamespace(
+            best_candidate={"current_candidate": seed},
+            best_score=0.75,
+            total_evals=1,
+            eval_log=[{"score": 0.75}],
+            metadata={"source": "current-gepa"},
         )
 
 
@@ -133,9 +149,9 @@ class OmniPipelineTests(unittest.TestCase):
             ),
         )
 
-    def test_pypi_gepa_014_config_uses_public_nested_api(self) -> None:
+    def test_latest_gepa_config_uses_public_engine_pluggable_api(self) -> None:
         _launcher, config_cls = omni_pipeline._load_launcher(None, None)
-        self.assertEqual(config_cls.__name__, "GEPAConfig")
+        self.assertEqual(config_cls.__name__, "OptimizeAnythingConfig")
         config = omni_pipeline._make_pypi_config(
             config_cls,
             omni_pipeline.BudgetSlice(4, None),
@@ -150,9 +166,10 @@ class OmniPipelineTests(unittest.TestCase):
             codex_proposer_factory=self.proposer_factory,
             gepa_parallel_proposals=None,
         )
-        self.assertEqual(config.engine.max_metric_calls, 4)
-        self.assertEqual(config.engine.max_workers, 2)
-        self.assertIsNotNone(config.reflection.custom_candidate_proposer)
+        self.assertEqual(config.max_evals, 4)
+        self.assertEqual(config.max_concurrency, 2)
+        self.assertEqual(config.engine_config["engine"]["max_workers"], 2)
+        self.assertIsNotNone(config.engine_config["reflection"]["custom_candidate_proposer"])
         self.assertEqual(self.proposer_calls[0]["model"], "gpt-5-codex")
 
     def test_pypi_token_budget_requires_codex_pricing_and_forwards_cap(self) -> None:
@@ -187,7 +204,8 @@ class OmniPipelineTests(unittest.TestCase):
             codex_output_cost_per_million=8.0,
             codex_proposer_factory=self.proposer_factory,
         )
-        self.assertEqual(config.engine.max_metric_calls, 4)
+        self.assertEqual(config.max_evals, 4)
+        self.assertEqual(config.max_token_cost, 1.0)
         self.assertEqual(self.proposer_calls[-1]["max_token_cost"], 1.0)
         self.assertEqual(self.proposer_calls[-1]["input_cost_per_million"], 2.0)
         self.assertEqual(self.proposer_calls[-1]["output_cost_per_million"], 8.0)
@@ -205,8 +223,37 @@ class OmniPipelineTests(unittest.TestCase):
         )
         self.assertNotIn("test_set", public_launcher.kwargs)
         self.assertEqual(result.best_candidate, "seed")
+        self.assertEqual(result.best_score, 0.75)
+        self.assertEqual(result.total_evals, 1)
+        self.assertEqual(result.metadata["run_dir"], "/external/runs/public-gepa/standalone/gepa")
         self.assertEqual(result.metadata["test_score"], 0.5)
         self.assertEqual(batch_calls, [])
+
+    def test_pypi_result_adapter_accepts_current_optimize_anything_result(self) -> None:
+        _launcher, config_cls = omni_pipeline._load_launcher(None, None)
+        current_launcher = CurrentResultLauncher(config_cls)
+        result = omni_pipeline.run_optimization(
+            "seed",
+            task={
+                "evaluator": lambda _candidate, _example: (0.5, {}),
+                "dataset": ["train"],
+                "valset": ["validation"],
+                "test_set": ["held-out"],
+            },
+            engine="gepa",
+            max_evals=4,
+            max_token_cost=None,
+            run_dir="/external/runs/current-gepa",
+            output_dir="/external/outputs/current-gepa",
+            launcher=current_launcher,
+            codex_proposer_factory=self.proposer_factory,
+        )
+
+        self.assertEqual(result.best_candidate, "seed")
+        self.assertEqual(result.best_score, 0.75)
+        self.assertEqual(result.total_evals, 1)
+        self.assertEqual(result.metadata["run_dir"], "/external/runs/current-gepa/standalone/gepa")
+        self.assertEqual(result.metadata["test_score"], 0.5)
 
     def test_explicit_pypi_launcher_does_not_infer_native_omni(self) -> None:
         _launcher, config_cls = omni_pipeline._load_launcher(None, None)
@@ -409,6 +456,7 @@ class OmniPipelineTests(unittest.TestCase):
         omni_pipeline.run_optimization(
             "seed",
             task=self.task,
+            strategy="omni",
             max_evals=40,
             max_token_cost=20.0,
             run_dir="/external/runs/forwarded",
@@ -551,6 +599,7 @@ class OmniPipelineTests(unittest.TestCase):
         result = omni_pipeline.run_optimization(
             "seed",
             task=self.task,
+            strategy="omni",
             max_evals=40,
             max_token_cost=20.0,
             codex_input_cost_per_million=2.0,
@@ -666,6 +715,7 @@ class OmniPipelineTests(unittest.TestCase):
                 max_token_cost=None,
                 run_dir=root / "runs",
                 output_dir=root / "outputs",
+                codex_model="gpt-5-codex",
                 native_runner_factory=lambda **kwargs: Runner(**kwargs),
             )
 
@@ -673,6 +723,7 @@ class OmniPipelineTests(unittest.TestCase):
         self.assertEqual(result.metadata["heldout_scores"], [1.0])
         self.assertEqual(result.metadata["test_scores"], [1.0])
         self.assertEqual(result.metadata["test_score"], 1.0)
+        self.assertEqual({call["model"] for call in calls}, {"gpt-5-codex"})
         self.assertEqual([call["command"] for call in calls], ["codex", "codex"])
         self.assertNotEqual(result.metadata["work_dir"], str(calls[0]["work_dir"]))
 

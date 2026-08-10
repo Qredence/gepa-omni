@@ -11,7 +11,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 # fmt: off
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "skills" / "gepa-omni-skill" / "scripts"
+SCRIPT_DIR = (
+    Path(__file__).resolve().parents[1]
+    / "plugins"
+    / "gepa-omni"
+    / "skills"
+    / "gepa-omni-skill"
+    / "scripts"
+)
 sys.path.insert(0, str(SCRIPT_DIR))
 from codex_agent_proposer import CodexAgentProposer  # noqa: E402
 from native_omni import (  # noqa: E402
@@ -78,8 +85,9 @@ class NativeRunnerTests(unittest.TestCase):
 
     def test_shared_runner_uses_chat_completions_and_retains_history(self) -> None:
         runner = self._runner(backend="pi")
-        first = runner.run("first", work_dir=self.work_dir)
-        second = runner.run("second", work_dir=self.work_dir)
+        with patch.dict(os.environ, {"GEPA_OMNI_RETAIN_RAW_RESPONSES": "1"}):
+            first = runner.run("first", work_dir=self.work_dir)
+            second = runner.run("second", work_dir=self.work_dir)
 
         self.assertEqual(first.command, ("openai-chat-completions", "https://llm.example/v1/chat/completions"))
         self.assertEqual((first.input_tokens, first.output_tokens), (100, 50))
@@ -90,11 +98,17 @@ class NativeRunnerTests(unittest.TestCase):
         self.assertEqual(second.metadata["backend"], "pi")
         self.assertTrue((self.work_dir / "chat_completion_response.json").exists())
 
+    def test_raw_response_is_not_retained_by_default(self) -> None:
+        result = self._runner().run("first", work_dir=self.work_dir)
+
+        self.assertFalse((self.work_dir / "chat_completion_response.json").exists())
+        self.assertFalse(result.metadata["raw_response_retained"])
+
     def test_environment_values_override_compatibility_constructor_values(self) -> None:
         with patch.dict(
             os.environ,
-            {
-                "OPENAI_BASE_URL": "https://env.example/v1",
+                {
+                "OPENAI_BASE_URL": "https://api.openai.com/v1",
                 "OPENAI_MODEL": "env-model",
                 "OPENAI_API_KEY": "env-key",
             },
@@ -103,9 +117,21 @@ class NativeRunnerTests(unittest.TestCase):
                 model="constructor-model", base_url="https://constructor.example/v1", api_key="constructor-key"
             ).run("go", work_dir=self.work_dir)
         request = self.requests[0]
-        self.assertEqual(request.full_url, "https://env.example/v1/chat/completions")
+        self.assertEqual(request.full_url, "https://api.openai.com/v1/chat/completions")
         self.assertEqual(request.get_header("Authorization"), "Bearer env-key")
         self.assertEqual(json.loads(request.data.decode())["model"], "env-model")
+
+    def test_openai_key_is_rejected_for_a_non_openai_environment_endpoint(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "OPENAI_BASE_URL": "https://llm.example/v1",
+                "OPENAI_MODEL": "env-model",
+                "OPENAI_API_KEY": "must-not-leave-openai",
+            },
+        ):
+            with self.assertRaisesRegex(ValueError, "not permitted"):
+                self._runner(api_key=None)
 
     def test_cost_cap_uses_provider_usage_and_rates(self) -> None:
         runner = self._runner(input_cost_per_million=2.0, output_cost_per_million=8.0)
@@ -166,7 +192,7 @@ class NativeRunnerTests(unittest.TestCase):
                     opener=self.opener,
                 )
                 result = runner.run("go", work_dir=self.work_dir)
-                self.assertEqual(result.metadata["backend"], backend)
+                self.assertEqual(result.metadata["runner_profile"], backend)
 
     def test_cost_bounded_proposals_do_not_run_concurrently(self) -> None:
         active = 0

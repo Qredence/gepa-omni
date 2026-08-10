@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import unittest
+import json
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = PROJECT_ROOT / "skills" / "gepa-omni-skill"
+SKILL_ROOT = PROJECT_ROOT / "plugins" / "gepa-omni" / "skills" / "gepa-omni-skill"
 REFERENCE_ROOT = SKILL_ROOT / "references"
 
 
@@ -22,6 +23,7 @@ class ApiContractDocumentationTests(unittest.TestCase):
         cls.gotchas = (REFERENCE_ROOT / "gotchas.md").read_text(encoding="utf-8")
         cls.preflight = (SKILL_ROOT / "scripts" / "preflight.py").read_text(encoding="utf-8")
         cls.notice = (SKILL_ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+        cls.provenance = json.loads((SKILL_ROOT / "PROVENANCE.json").read_text(encoding="utf-8"))
 
     def test_stale_external_source_install_guidance_is_absent(self) -> None:
         documents = (
@@ -41,23 +43,22 @@ class ApiContractDocumentationTests(unittest.TestCase):
             for stale in stale_tokens:
                 self.assertNotIn(stale, lowered)
 
-    def test_pypi_and_native_engine_boundary_is_documented(self) -> None:
+    def test_upstream_and_native_engine_boundary_is_documented(self) -> None:
         combined = "\n".join((self.readme, self.skill, self.api, self.omni))
         for document in (self.readme, self.skill, self.api, self.omni):
-            self.assertIn("gepa==0.1.4", document)
+            self.assertIn("latest upstream GEPA", document)
         for expected in ("autoresearch", "meta_harness", "best_of_n", "plugin-native"):
             self.assertIn(expected, combined)
         self.assertIn("standalone reflective", self.readme.lower())
-        self.assertIn("Published PyPI", self.api)
+        self.assertIn("upstream GEPA API", self.api)
 
-    def test_direct_pypi_configuration_and_heldout_boundary_are_documented(self) -> None:
+    def test_direct_upstream_configuration_and_heldout_boundary_are_documented(self) -> None:
         self.assertIn("GEPAConfig", self.api)
         self.assertIn("EngineConfig.max_metric_calls", self.api)
         self.assertIn("ReflectionConfig", self.api)
         self.assertIn("stop_callbacks", self.api)
-        self.assertIn("no `test_set` parameter", self.api)
+        self.assertIn("OptimizeAnythingConfig", self.api)
         self.assertIn('task["test_set"]', self.api)
-        self.assertNotIn("OptimizeAnythingConfig", self.api)
 
     def test_backend_parameters_and_chat_configuration_are_documented(self) -> None:
         combined = "\n".join((self.readme, self.skill, self.api, self.codex, self.pi, self.omni))
@@ -106,6 +107,19 @@ class ApiContractDocumentationTests(unittest.TestCase):
         self.assertIn("native_omni/core.py", self.notice)
         self.assertIn("native_omni/runners.py", self.notice)
         self.assertIn("THIRD_PARTY_NOTICES.md", self.readme)
+
+    def test_machine_readable_provenance_matches_the_shipped_notice(self) -> None:
+        self.assertEqual(self.provenance["upstream"]["project"], "gepa-ai/gepa")
+        self.assertEqual(self.provenance["upstream"]["license"], "MIT")
+        self.assertEqual(
+            self.provenance["upstream"]["commit"],
+            "8a2bed96385202f69caaeb5327a843ed2f5ea225",
+        )
+        self.assertEqual(
+            self.provenance["files"],
+            ["scripts/native_omni/core.py", "scripts/native_omni/runners.py"],
+        )
+        self.assertIn("PROVENANCE.json", self.notice)
 
     def test_upstream_semantic_baseline_remains_recorded(self) -> None:
         self.assertIn("8a2bed96385202f69caaeb5327a843ed2f5ea225", self.skill)

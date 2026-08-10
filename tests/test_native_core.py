@@ -10,7 +10,14 @@ import urllib.request
 from pathlib import Path
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "skills" / "gepa-omni-skill" / "scripts"
+SCRIPT_DIR = (
+    Path(__file__).resolve().parents[1]
+    / "plugins"
+    / "gepa-omni"
+    / "skills"
+    / "gepa-omni-skill"
+    / "scripts"
+)
 sys.path.insert(0, str(SCRIPT_DIR))
 from native_omni import (  # noqa: E402
     BudgetExhausted,

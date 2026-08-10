@@ -1,0 +1,42 @@
+{
+  "name": "fleet-optimize",
+  "version": "0.1.0",
+  "description": "Optimize scorable artifacts with GEPA's latest parallel-proposal workflow.",
+  "author": {
+    "name": "Qredence",
+    "url": "https://github.com/Qredence/gepa-omni"
+  },
+  "homepage": "https://github.com/Qredence/gepa-omni",
+  "repository": "https://github.com/Qredence/gepa-omni",
+  "license": "MIT",
+  "keywords": [
+    "gepa",
+    "optimization",
+    "parallel-proposals",
+    "prompt-optimization",
+    "optimize-anything",
+    "agent-skill"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Fleet Optimize",
+    "shortDescription": "Run GEPA's parallel proposal search.",
+    "longDescription": "Use the latest upstream GEPA API to evolve prompts, code, configurations, schemas, SQL, and agent instructions with P×N proposal sampling, concurrent evaluation, selection strategies, and optional batch evaluation.",
+    "developerName": "Qredence",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "websiteURL": "https://github.com/Qredence/gepa-omni",
+    "privacyPolicyURL": "https://github.com/Qredence/gepa-omni/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/Qredence/gepa-omni/blob/main/LICENSE",
+    "defaultPrompt": [
+      "Optimize this candidate with parallel GEPA proposals",
+      "Help me design a feedback-rich evaluator",
+      "Choose P×N sampling and evaluation concurrency"
+    ],
+    "brandColor": "#2563EB",
+    "screenshots": []
+  }
+}

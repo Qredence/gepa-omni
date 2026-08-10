@@ -14,7 +14,7 @@ from unittest.mock import patch
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TOOLS_DIR = PROJECT_ROOT / "tools"
 sys.path.insert(0, str(TOOLS_DIR))
-PROPOSER_DIR = PROJECT_ROOT / "skills" / "gepa-omni-skill" / "scripts"
+PROPOSER_DIR = PROJECT_ROOT / "plugins" / "gepa-omni" / "skills" / "gepa-omni-skill" / "scripts"
 sys.path.insert(0, str(PROPOSER_DIR))
 
 import gepa_self_evaluate as self_evaluate_module  # noqa: E402
@@ -56,6 +56,7 @@ class SelfEvaluateTests(unittest.TestCase):
             *,
             env: dict[str, str] | None = None,
         ) -> self_evaluate_module.CommandResult:
+            self.assertTrue((cwd / "packages" / "gepa-omni" / "src" / "gepa_omni" / "api.py").is_file())
             if "plugin-eval" in " ".join(command) or "node" in command:
                 return self_evaluate_module.CommandResult(tuple(command), 0, report, "")
             return self._result(command)
@@ -143,7 +144,9 @@ class SelfEvaluateTests(unittest.TestCase):
                 error_dir.mkdir(parents=True)
                 (error_dir / "error.txt").write_text("CodexProposalTimeout: exceeded 600s\n", encoding="utf-8")
 
-        seed = (self_evaluate_module.PLUGIN_ROOT / self_evaluate_module.TARGET_RELATIVE).read_text(encoding="utf-8")
+        seed = (self_evaluate_module.PLUGIN_ROOT / self_evaluate_module.PLUGIN_TARGET_RELATIVE).read_text(
+            encoding="utf-8"
+        )
         result = SimpleNamespace(
             best_candidate={self_evaluate_module.COMPONENT: seed},
             best_score=0.91,
@@ -171,9 +174,7 @@ class SelfEvaluateTests(unittest.TestCase):
 
         gepa_package = ModuleType("gepa")
         gepa_optimize = ModuleType("gepa.optimize_anything")
-        gepa_optimize.EngineConfig = FakeConfig
-        gepa_optimize.GEPAConfig = FakeConfig
-        gepa_optimize.ReflectionConfig = FakeConfig
+        gepa_optimize.OptimizeAnythingConfig = FakeConfig
         gepa_optimize.optimize_anything = fake_optimize
         gepa_package.optimize_anything = gepa_optimize
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -223,10 +224,13 @@ class SelfEvaluateTests(unittest.TestCase):
             all(call.kwargs["allow_candidate_execution"] for call in evaluate_candidate_mock.call_args_list)
         )
         config = captured["config"]
-        self.assertEqual(config.kwargs["engine"].kwargs["max_metric_calls"], 6)
-        self.assertEqual(config.kwargs["engine"].kwargs["max_candidate_proposals"], 1)
-        self.assertEqual(config.kwargs["reflection"].kwargs["module_selector"], "all")
-        self.assertIsNotNone(config.kwargs["stop_callbacks"])
+        self.assertEqual(config.kwargs["engine"], "gepa")
+        self.assertEqual(config.kwargs["max_evals"], 6)
+        self.assertEqual(config.kwargs["max_concurrency"], 1)
+        self.assertEqual(config.kwargs["stop_at_score"], 1.0)
+        engine_config = config.kwargs["engine_config"]
+        self.assertEqual(engine_config["engine"]["max_candidate_proposals"], 1)
+        self.assertEqual(engine_config["reflection"]["module_selector"], "all")
         self.assertEqual(
             captured["seed_candidate"],
             {self_evaluate_module.COMPONENT: seed},
