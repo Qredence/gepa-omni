@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = PROJECT_ROOT / "plugins" / "gepa-omni" / "skills" / "gepa-omni-skill"
+SKILL_ROOT = PROJECT_ROOT / "plugins" / "fleet-optimize" / "skills" / "gepa-omni-skill"
 REFERENCE_ROOT = SKILL_ROOT / "references"
 
 

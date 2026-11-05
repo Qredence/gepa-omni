@@ -13,7 +13,7 @@ from pathlib import Path
 SCRIPT_DIR = (
     Path(__file__).resolve().parents[1]
     / "plugins"
-    / "gepa-omni"
+    / "fleet-optimize"
     / "skills"
     / "gepa-omni-skill"
     / "scripts"

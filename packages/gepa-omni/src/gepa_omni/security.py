@@ -99,8 +99,8 @@ def _validate_url(base_url: str, *, allow_private: bool) -> tuple[str, str, bool
     if not allow_private and not is_loopback:
         try:
             addresses = {item[4][0] for item in socket.getaddrinfo(host, None)}
-        except (OSError, socket.gaierror):
-            addresses = set()
+        except (OSError, socket.gaierror) as exc:
+            raise EndpointPolicyError(f"endpoint hostname could not be resolved; refusing {host!r}") from exc
         if any(_host_is_private(address) for address in addresses):
             raise EndpointPolicyError(
                 "endpoint resolves to a private or link-local address; explicit opt-in is required"

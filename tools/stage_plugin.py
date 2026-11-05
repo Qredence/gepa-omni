@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -14,11 +13,11 @@ from typing import Final
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGINS_ROOT = REPO_ROOT / "plugins"
 PUBLIC_PACKAGE_ROOT = REPO_ROOT / "packages" / "gepa-omni" / "src" / "gepa_omni"
+PUBLIC_PACKAGE_REPO_PREFIX = Path("packages/gepa-omni/src/gepa_omni")
 PUBLIC_PACKAGE_DESTINATION = Path("skills/gepa-omni-skill/scripts/gepa_omni")
-PLUGIN_NAMES: Final = ("gepa-omni", "fleet-optimize")
-DEFAULT_PLUGIN_NAME = "gepa-omni"
-# Kept as a compatibility alias for callers of the original single-plugin tool.
-CANONICAL_PLUGIN_NAME = DEFAULT_PLUGIN_NAME
+_FORBIDDEN_INDEX_MODES = frozenset({"120000", "160000"})
+PLUGIN_NAMES: Final = ("fleet-optimize",)
+DEFAULT_PLUGIN_NAME = "fleet-optimize"
 DEFAULT_PACKAGE_FORMAT: Final = "portable"
 SHIPPED_PATHS_BY_FORMAT: Final = {
     "portable": (Path("plugin.json"), Path("skills"), Path("LICENSE")),
@@ -50,6 +49,33 @@ def _validate_output(output: Path, *, plugin_name: str) -> Path:
     return resolved
 
 
+def _index_entries(repo_prefix: Path) -> list[tuple[str, Path]]:
+    command = [
+        "git",
+        "-C",
+        str(REPO_ROOT),
+        "ls-files",
+        "-z",
+        "-s",
+        "--",
+        str(repo_prefix),
+    ]
+    result = subprocess.run(command, capture_output=True, check=False)
+    if result.returncode != 0:
+        detail = result.stderr.decode(errors="replace").strip()
+        raise RuntimeError(f"could not enumerate tracked files under {repo_prefix}: {detail}")
+
+    entries: list[tuple[str, Path]] = []
+    for entry in result.stdout.decode().split("\0"):
+        if not entry:
+            continue
+        mode, _, _, repo_path = entry.split(maxsplit=3)
+        if mode in _FORBIDDEN_INDEX_MODES:
+            raise ValueError(f"staging does not support symlink or gitlink index entries: {repo_path}")
+        entries.append((mode, Path(repo_path)))
+    return entries
+
+
 def _tracked_paths(plugin_name: str, package_format: str) -> list[Path]:
     _plugin_root(plugin_name)
     try:
@@ -58,32 +84,42 @@ def _tracked_paths(plugin_name: str, package_format: str) -> list[Path]:
         choices = ", ".join(sorted(SHIPPED_PATHS_BY_FORMAT))
         raise ValueError(f"unsupported package format {package_format!r}; choose one of {choices}") from exc
 
-    command = [
-        "git",
-        "-C",
-        str(REPO_ROOT),
-        "ls-files",
-        "-z",
-        "--",
-        *(str(Path("plugins") / plugin_name / path) for path in shipped_paths),
-    ]
-    result = subprocess.run(command, capture_output=True, check=False)
-    if result.returncode != 0:
-        detail = result.stderr.decode(errors="replace").strip()
-        raise RuntimeError(f"could not enumerate tracked plugin files: {detail}")
-
     plugin_prefix = Path("plugins") / plugin_name
-    tracked_paths = [Path(path).relative_to(plugin_prefix) for path in result.stdout.decode().split("\0") if path]
-
-    # Manifests and the license are package metadata. Allow them to be staged
-    # from a dirty worktree before the implementation is added to the index;
-    # runtime files remain strictly Git-tracked so accidental files cannot ship.
-    metadata = Path("plugin.json") if package_format == "portable" else Path(".codex-plugin") / "plugin.json"
-    metadata_paths = (metadata, Path("LICENSE"))
-    for metadata_path in metadata_paths:
-        if metadata_path not in tracked_paths and (PLUGINS_ROOT / plugin_name / metadata_path).is_file():
-            tracked_paths.insert(0, metadata_path)
+    tracked_paths: list[Path] = []
+    for _mode, repo_path in _index_entries(plugin_prefix):
+        relative_path = repo_path.relative_to(plugin_prefix)
+        if any(relative_path == root or root in relative_path.parents for root in shipped_paths):
+            tracked_paths.append(relative_path)
     return sorted(set(tracked_paths))
+
+
+def _tracked_public_package_py_paths() -> list[Path]:
+    repo_paths = [
+        repo_path for _mode, repo_path in _index_entries(PUBLIC_PACKAGE_REPO_PREFIX) if repo_path.suffix == ".py"
+    ]
+    return sorted(repo_paths)
+
+
+def _write_blob_from_index(repo_path: Path, target: Path) -> None:
+    show = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "show", f":{repo_path.as_posix()}"],
+        capture_output=True,
+        check=False,
+    )
+    if show.returncode != 0:
+        detail = show.stderr.decode(errors="replace").strip()
+        raise RuntimeError(f"could not read indexed file {repo_path}: {detail}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(show.stdout)
+
+
+def _stage_public_package(destination: Path) -> None:
+    if not PUBLIC_PACKAGE_ROOT.is_dir():
+        raise FileNotFoundError(f"public GEPA Omni package does not exist: {PUBLIC_PACKAGE_ROOT}")
+    for repo_path in _tracked_public_package_py_paths():
+        relative = repo_path.relative_to(PUBLIC_PACKAGE_REPO_PREFIX)
+        target = destination / PUBLIC_PACKAGE_DESTINATION / relative
+        _write_blob_from_index(repo_path, target)
 
 
 def stage(
@@ -97,26 +133,10 @@ def stage(
     destination = _validate_output(output, plugin_name=plugin_name)
     destination.mkdir(parents=True, exist_ok=True)
 
-    tracked_paths = _tracked_paths(plugin_name, package_format)
-    for relative_path in tracked_paths:
-        source = plugin_root / relative_path
-        target = destination / relative_path
-        if source.is_symlink() or not source.is_file():
-            raise ValueError(f"staging does not support symlink or non-file: {relative_path}")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
-    if plugin_name == "gepa-omni":
-        if not PUBLIC_PACKAGE_ROOT.is_dir():
-            raise FileNotFoundError(f"public GEPA Omni package does not exist: {PUBLIC_PACKAGE_ROOT}")
-        # The skill's preflight and runtime scripts are executable from a
-        # staged payload without the repository's uv source mapping. Bundle
-        # the same public package beside those scripts so ``import
-        # gepa_omni`` has no checkout-only dependency.
-        for source in sorted(PUBLIC_PACKAGE_ROOT.rglob("*.py")):
-            relative_path = PUBLIC_PACKAGE_DESTINATION / source.relative_to(PUBLIC_PACKAGE_ROOT)
-            target = destination / relative_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
+    plugin_prefix = plugin_root.relative_to(REPO_ROOT)
+    for relative_path in _tracked_paths(plugin_name, package_format):
+        _write_blob_from_index(plugin_prefix / relative_path, destination / relative_path)
+    _stage_public_package(destination)
     return destination
 
 
@@ -126,7 +146,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--plugin",
         choices=PLUGIN_NAMES,
         default=DEFAULT_PLUGIN_NAME,
-        help="Plugin payload to stage (default: gepa-omni)",
+        help="Plugin payload to stage (default: fleet-optimize)",
     )
     parser.add_argument(
         "--output",

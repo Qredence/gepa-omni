@@ -1,7 +1,7 @@
 {
   "name": "fleet-optimize",
-  "version": "0.1.0",
-  "description": "Optimize scorable artifacts with GEPA's latest parallel-proposal workflow.",
+  "version": "0.2.0",
+  "description": "Optimize scorable artifacts with GEPA Omni orchestration and GEPA's latest parallel-proposal workflow.",
   "author": {
     "name": "Qredence",
     "url": "https://github.com/Qredence/gepa-omni"
@@ -15,13 +15,14 @@
     "parallel-proposals",
     "prompt-optimization",
     "optimize-anything",
-    "agent-skill"
+    "agent-skill",
+    "dspy"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Fleet Optimize",
-    "shortDescription": "Run GEPA's parallel proposal search.",
-    "longDescription": "Use the latest upstream GEPA API to evolve prompts, code, configurations, schemas, SQL, and agent instructions with P×N proposal sampling, concurrent evaluation, selection strategies, and optional batch evaluation.",
+    "shortDescription": "Optimize scorable text with GEPA.",
+    "longDescription": "Fleet Optimize ships two skills. GEPA Omni runs standalone, fixed-portfolio, and adaptive workflows across reflective GEPA, AutoResearch, Meta-Harness, and Best-of-N. The parallel-proposal skill uses the latest upstream GEPA API for P×N sampling, concurrent evaluation, selection strategies, and optional batch evaluation. GEPA Omni engines use one OpenAI-compatible Chat Completions runner without local shell or filesystem tools. Runner profiles are compatibility metadata, not Codex, Pi, or Claude CLI sessions.",
     "developerName": "Qredence",
     "category": "Developer Tools",
     "capabilities": [
@@ -32,9 +33,9 @@
     "privacyPolicyURL": "https://github.com/Qredence/gepa-omni/blob/main/PRIVACY.md",
     "termsOfServiceURL": "https://github.com/Qredence/gepa-omni/blob/main/LICENSE",
     "defaultPrompt": [
+      "Optimize this candidate against my evaluator with Omni",
       "Optimize this candidate with parallel GEPA proposals",
-      "Help me design a feedback-rich evaluator",
-      "Choose P×N sampling and evaluation concurrency"
+      "Help me write a feedback-rich GEPA evaluator"
     ],
     "brandColor": "#2563EB",
     "screenshots": []

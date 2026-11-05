@@ -10,13 +10,14 @@ description: >-
 # Fleet Optimize
 
 Use Fleet Optimize when the optimization bottleneck benefits from proposing
-and evaluating several GEPA mutations in one iteration. The plugin targets the
+and evaluating several GEPA mutations in one iteration. This skill targets the
 latest upstream GEPA `optimize_anything` API and its P×N proposal strategies.
 
 ## Runtime boundary
 
-Fleet Optimize is a thin plugin-owned launcher around upstream GEPA. It does
-not vendor GEPA or import the `gepa-omni` implementation. Development and
+Fleet Optimize is a thin skill-owned launcher around upstream GEPA. It does
+not vendor GEPA or import the `gepa_omni` package or the GEPA Omni skill.
+Development and
 latest-source setup uses:
 
 ```bash

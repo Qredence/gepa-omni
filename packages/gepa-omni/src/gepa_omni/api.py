@@ -65,6 +65,8 @@ def _result(raw: Any, *, strategy: str, engine: str | None = None) -> Optimizati
     evals = getattr(raw, "total_evals", None)
     if score is None and hasattr(raw, "val_aggregate_scores"):
         score = raw.val_aggregate_scores[raw.best_idx]
+    if score is None:
+        raise ValueError("optimization result did not include a score")
     if evals is None:
         evals = getattr(raw, "total_metric_calls", 0)
     metadata = dict(getattr(raw, "metadata", {}) or {})
@@ -109,8 +111,6 @@ def _endpoint_environment(endpoint: EndpointConfiguration):
     values = {
         "OPENAI_BASE_URL": endpoint.base_url,
         "OPENAI_MODEL": endpoint.model,
-        # Upstream GEPA/LiteLLM reads this conventional variable. The value is
-        # restored immediately after the call and is never written to config.
         "OPENAI_API_KEY": endpoint.api_key,
     }
     previous = {name: os.environ.get(name) for name in values}

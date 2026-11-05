@@ -9,11 +9,12 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "plugins" / "gepa-omni" / "skills" / "gepa-omni-skill" / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "plugins" / "fleet-optimize" / "skills" / "gepa-omni-skill" / "scripts"
 _SCRIPT_DIR_STR = str(SCRIPT_DIR)
 sys.path.insert(0, _SCRIPT_DIR_STR)
 try:
     import omni_pipeline  # noqa: E402
+    from native_omni.core import Result  # noqa: E402
     from native_omni.runners import AgentRunResult  # noqa: E402
 finally:
     if sys.path and sys.path[0] == _SCRIPT_DIR_STR:
@@ -663,6 +664,18 @@ class OmniPipelineTests(unittest.TestCase):
             self._run_omni(sandbox=False)
         with self.assertRaisesRegex(ValueError, "outside the development checkout"):
             self._run_omni(run_dir=Path(__file__).resolve().parents[1] / "runs")
+        with self.assertRaisesRegex(ValueError, "absolute path"):
+            omni_pipeline.run_optimization(
+                "seed",
+                task=self.task,
+                engine="gepa",
+                max_evals=12,
+                max_token_cost=None,
+                run_dir="relative/run",
+                output_dir="/external/outputs/standalone",
+                launcher=self.launcher,
+                config_cls=FakeConfig,
+            )
 
         with self.assertRaisesRegex(ValueError, "outside the development checkout"):
             omni_pipeline.run_optimization(
@@ -676,6 +689,47 @@ class OmniPipelineTests(unittest.TestCase):
                 launcher=self.launcher,
                 config_cls=FakeConfig,
             )
+
+    def test_auto_strategy_includes_pilot_evaluations_in_total_evals(self) -> None:
+        original = omni_pipeline.run_optimization
+
+        def wrapped(seed: str, **kwargs: object) -> SimpleNamespace | Result:
+            if kwargs.get("strategy") == "auto" and kwargs.get("engine") is None:
+                return original(seed, **kwargs)
+            engine = kwargs.get("engine")
+            if engine in omni_pipeline.NATIVE_ENGINES:
+                return Result(
+                    best_candidate="winner",
+                    best_score=0.95,
+                    total_evals=2,
+                    eval_log=[],
+                    metadata={},
+                )
+            return SimpleNamespace(
+                best_candidate="winner",
+                best_score=0.1,
+                total_evals=2,
+                metadata={},
+            )
+
+        with patch.object(omni_pipeline, "run_optimization", wrapped):
+            result = omni_pipeline.run_optimization(
+                "seed",
+                task=self.task,
+                strategy="auto",
+                max_evals=40,
+                max_token_cost=None,
+                run_dir="/external/runs/auto",
+                output_dir="/external/outputs/auto",
+                launcher=self.launcher,
+                config_cls=FakeConfig,
+            )
+
+        self.assertIsInstance(result, Result)
+        self.assertTrue(result.__dataclass_params__.frozen)
+        self.assertEqual(result.total_evals, 8)
+        self.assertEqual(result.metadata["auto"]["pilot_evals"], 6)
+        self.assertEqual(result.metadata["auto"]["continuation_engine"], "autoresearch")
 
     def test_native_best_of_n_is_independent_and_scores_heldout_afterwards(self) -> None:
         calls: list[dict[str, object]] = []

@@ -59,6 +59,11 @@ class AgentRunner(Protocol):
     ) -> AgentRunResult: ...
 
 
+def _retain_raw_responses() -> bool:
+    value = os.environ.get("GEPA_OMNI_RETAIN_RAW_RESPONSES", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 def _runtime_checkout() -> Path:
     plugin_root = Path(__file__).resolve().parents[4]
     for candidate in (plugin_root, *plugin_root.parents):
@@ -188,9 +193,12 @@ class OpenAIChatCompletionRunner:
             if spent_token_cost + response.cost_usd > max_token_cost:
                 raise TokenBudgetExceeded("Chat Completions token cost exceeded max_token_cost")
 
-        if os.environ.get("GEPA_OMNI_RETAIN_RAW_RESPONSES", "").strip().lower() in {"1", "true", "yes", "on"}:
+        if _retain_raw_responses():
             response_json = json.dumps(response.response, ensure_ascii=False, indent=2, default=str) + "\n"
             (directory / "chat_completion_response.json").write_text(response_json, encoding="utf-8")
+            stdout = json.dumps(response.response, ensure_ascii=False)
+        else:
+            stdout = ""
         return AgentRunResult(
             final_text=response.final_text,
             session_id=requested_session,
@@ -199,15 +207,14 @@ class OpenAIChatCompletionRunner:
             cost_usd=response.cost_usd,
             returncode=0,
             command=("openai-chat-completions", self.client.endpoint),
-            stdout=json.dumps(response.response, ensure_ascii=False),
+            stdout=stdout,
             stderr="",
             metadata={
                 "backend": self.backend,
                 "runner_profile": self.backend,
                 "model": self.client.model,
                 "session_mode": "chat_history",
-                "raw_response_retained": os.environ.get("GEPA_OMNI_RETAIN_RAW_RESPONSES", "").lower()
-                in {"1", "true", "yes", "on"},
+                "raw_response_retained": _retain_raw_responses(),
             },
         )
 

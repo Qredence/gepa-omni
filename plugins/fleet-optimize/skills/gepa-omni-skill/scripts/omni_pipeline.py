@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, is_dataclass, replace
 from inspect import Parameter, signature
 from pathlib import Path
 from types import SimpleNamespace
@@ -679,6 +679,22 @@ def _annotate_result(
     }
 
 
+def _with_auto_accounting(result: Any, *, pilot_evals: int, auto: Mapping[str, Any]) -> Any:
+    """Add pilot evaluations without mutating a frozen engine result."""
+
+    total_evals = int(getattr(result, "total_evals", 0)) + pilot_evals
+    metadata = getattr(result, "metadata", None)
+    params = getattr(result, "__dataclass_params__", None)
+    if is_dataclass(result) and params is not None and params.frozen:
+        merged = dict(metadata) if isinstance(metadata, dict) else {}
+        merged["auto"] = dict(auto)
+        return replace(result, total_evals=total_evals, metadata=merged)
+    if isinstance(metadata, dict):
+        metadata["auto"] = dict(auto)
+    result.total_evals = total_evals
+    return result
+
+
 def _seed_score(seed_candidate: str, task: Mapping[str, Any]) -> float | None:
     """Evaluate the seed once for adaptive engine comparison when possible."""
 
@@ -811,18 +827,21 @@ def _run_auto(
         max_candidates_per_iter=max_candidates_per_iter,
         ralph=ralph,
     )
-    metadata = getattr(result, "metadata", None)
-    if isinstance(metadata, dict):
-        metadata["auto"] = {
+    pilot_evals = sum(int(getattr(value, "total_evals", 0)) for _engine, value in pilot_results)
+    return _with_auto_accounting(
+        result,
+        pilot_evals=pilot_evals,
+        auto={
             "pilot_engines": list(plan.engines),
             "pilot_engine": winning_engine,
             "continuation_engine": continuation,
             "seed_score": seed_score,
             "pilot_scores": {engine: getattr(value, "best_score", None) for engine, value in pilot_results},
+            "pilot_evals": pilot_evals,
             "max_evals": max_evals,
             "max_token_cost": max_token_cost,
-        }
-    return result
+        },
+    )
 
 
 def _run_legacy_omni(

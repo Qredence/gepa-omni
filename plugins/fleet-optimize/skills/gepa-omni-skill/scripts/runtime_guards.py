@@ -28,7 +28,10 @@ def require_sandbox(sandbox: bool) -> None:
 def validate_external_path(path: str | Path, *, label: str) -> Path:
     """Resolve a runtime path and reject paths inside the development checkout."""
 
-    resolved = Path(path).expanduser().resolve()
+    candidate = Path(path).expanduser()
+    if not candidate.is_absolute():
+        raise ValueError(f"{label} must be an absolute path outside the development checkout")
+    resolved = candidate.resolve()
     if resolved == REPO_ROOT or REPO_ROOT in resolved.parents:
         raise ValueError(f"{label} must be outside the development checkout")
     return resolved

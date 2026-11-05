@@ -14,7 +14,7 @@ from unittest.mock import patch
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TOOLS_DIR = PROJECT_ROOT / "tools"
 sys.path.insert(0, str(TOOLS_DIR))
-PROPOSER_DIR = PROJECT_ROOT / "plugins" / "gepa-omni" / "skills" / "gepa-omni-skill" / "scripts"
+PROPOSER_DIR = PROJECT_ROOT / "plugins" / "fleet-optimize" / "skills" / "gepa-omni-skill" / "scripts"
 sys.path.insert(0, str(PROPOSER_DIR))
 
 import gepa_self_evaluate as self_evaluate_module  # noqa: E402

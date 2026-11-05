@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import os
+import socket
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from gepa_omni import OmniConfig, EndpointPolicyError, resolve_endpoint
 from gepa_omni.allocation import plan_auto_allocation
-from gepa_omni.api import OptimizationResult, optimize
+from gepa_omni.api import OptimizationResult, _result, optimize
 
 
 class GePAOmniPackageTests(unittest.TestCase):
@@ -83,6 +85,34 @@ class GePAOmniPackageTests(unittest.TestCase):
             environ={"GEPA_OMNI_ALLOW_PRIVATE_ENDPOINTS": "1"},
         )
         self.assertEqual(endpoint.base_url, "https://192.168.1.10/v1")
+
+    def test_unresolved_hostname_is_rejected(self) -> None:
+        with patch(
+            "gepa_omni.security.socket.getaddrinfo",
+            side_effect=socket.gaierror("name or service not known"),
+        ):
+            with self.assertRaisesRegex(EndpointPolicyError, "could not be resolved"):
+                resolve_endpoint(
+                    base_url="https://provider.example/v1",
+                    model="model",
+                    api_key="key",
+                )
+
+    def test_hostname_resolving_to_private_address_is_rejected(self) -> None:
+        with patch(
+            "gepa_omni.security.socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.50.1", 0))],
+        ):
+            with self.assertRaisesRegex(EndpointPolicyError, "private"):
+                resolve_endpoint(
+                    base_url="https://safe-looking.example/v1",
+                    model="model",
+                    api_key="key",
+                )
+
+    def test_result_without_score_raises(self) -> None:
+        with self.assertRaisesRegex(ValueError, "did not include a score"):
+            _result(SimpleNamespace(best_candidate="seed", metadata={}), strategy="gepa")
 
     def test_public_optimize_delegates_to_stable_task_contract(self) -> None:
         class FakeRaw:

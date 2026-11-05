@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "plugins" / "gepa-omni" / "skills" / "gepa-omni-skill"
+SKILL_ROOT = REPO_ROOT / "plugins" / "fleet-optimize" / "skills" / "gepa-omni-skill"
 PROVENANCE_PATH = SKILL_ROOT / "PROVENANCE.json"
 NOTICE_PATH = SKILL_ROOT / "THIRD_PARTY_NOTICES.md"
 SKILL_PATH = SKILL_ROOT / "SKILL.md"

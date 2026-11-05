@@ -5,18 +5,6 @@
   },
   "plugins": [
     {
-      "name": "gepa-omni",
-      "source": {
-        "source": "local",
-        "path": "./plugins/gepa-omni"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Developer Tools"
-    },
-    {
       "name": "fleet-optimize",
       "source": {
         "source": "local",

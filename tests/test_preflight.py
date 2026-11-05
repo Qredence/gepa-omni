@@ -10,7 +10,7 @@ from types import ModuleType
 from unittest.mock import patch
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "plugins" / "gepa-omni" / "skills" / "gepa-omni-skill" / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "plugins" / "fleet-optimize" / "skills" / "gepa-omni-skill" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 import preflight  # noqa: E402
 

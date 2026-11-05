@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "fleet-optimize",
-  "version": "0.1.0",
-  "description": "Optimize scorable artifacts with GEPA's latest parallel-proposal workflow.",
+  "version": "0.2.0",
+  "description": "Optimize scorable artifacts with GEPA Omni orchestration and GEPA's latest parallel-proposal workflow.",
   "author": {
     "name": "Qredence",
     "url": "https://github.com/Qredence/gepa-omni"
@@ -16,6 +16,7 @@
     "parallel-proposals",
     "prompt-optimization",
     "optimize-anything",
-    "agent-skill"
+    "agent-skill",
+    "dspy"
   ]
 }

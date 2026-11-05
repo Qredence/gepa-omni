@@ -12,7 +12,7 @@ from unittest.mock import patch
 SKILL = (
     Path(__file__).resolve().parents[1]
     / "plugins"
-    / "gepa-omni"
+    / "fleet-optimize"
     / "skills"
     / "gepa-omni-skill"
     / "SKILL.md"

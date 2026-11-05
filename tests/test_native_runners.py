@@ -14,7 +14,7 @@ from unittest.mock import patch
 SCRIPT_DIR = (
     Path(__file__).resolve().parents[1]
     / "plugins"
-    / "gepa-omni"
+    / "fleet-optimize"
     / "skills"
     / "gepa-omni-skill"
     / "scripts"
@@ -91,6 +91,7 @@ class NativeRunnerTests(unittest.TestCase):
 
         self.assertEqual(first.command, ("openai-chat-completions", "https://llm.example/v1/chat/completions"))
         self.assertEqual((first.input_tokens, first.output_tokens), (100, 50))
+        self.assertIn("choices", first.stdout)
         self.assertEqual(len(self.requests), 2)
         self.assertEqual(json.loads(self.requests[0].data.decode())["model"], "test-model")
         second_messages = json.loads(self.requests[1].data.decode())["messages"]
@@ -103,6 +104,15 @@ class NativeRunnerTests(unittest.TestCase):
 
         self.assertFalse((self.work_dir / "chat_completion_response.json").exists())
         self.assertFalse(result.metadata["raw_response_retained"])
+        self.assertEqual(result.stdout, "")
+
+    def test_raw_response_is_retained_on_stdout_when_enabled(self) -> None:
+        with patch.dict(os.environ, {"GEPA_OMNI_RETAIN_RAW_RESPONSES": "1"}):
+            result = self._runner().run("first", work_dir=self.work_dir)
+
+        self.assertTrue((self.work_dir / "chat_completion_response.json").exists())
+        self.assertTrue(result.metadata["raw_response_retained"])
+        self.assertIn("choices", result.stdout)
 
     def test_environment_values_override_compatibility_constructor_values(self) -> None:
         with patch.dict(

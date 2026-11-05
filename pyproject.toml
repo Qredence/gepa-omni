@@ -22,12 +22,11 @@ dev = [
 testpaths = [
     "tests",
     "tools",
-    "plugins/gepa-omni/tests",
     "plugins/fleet-optimize/tests",
 ]
 pythonpath = [
     "packages/gepa-omni/src",
-    "plugins/gepa-omni/skills/gepa-omni-skill/scripts",
+    "plugins/fleet-optimize/skills/gepa-omni-skill/scripts",
     "plugins/fleet-optimize/skills/fleet-optimize-skill/scripts",
     "tools",
 ]

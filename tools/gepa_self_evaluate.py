@@ -8,7 +8,7 @@ checkout. Run it from an environment that has ``gepa[full]``, ``pytest``,
 ``ruff``, and the OpenAI-compatible Chat Completions environment:
 
     uv run --with "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@8a2bed96385202f69caaeb5327a843ed2f5ea225" \
-        python plugins/gepa-omni/skills/gepa-omni-skill/scripts/self_evaluate.py \
+        python plugins/fleet-optimize/skills/gepa-omni-skill/scripts/self_evaluate.py \
         --allow-candidate-execution \
         --plugin-eval-command "node /path/to/plugin-eval.js"
 
@@ -41,12 +41,12 @@ except ImportError:  # pragma: no cover - used when executed as a script
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_ROOT = REPO_ROOT / "plugins" / "gepa-omni"
-STAGED_PLUGIN_NAME = "gepa-omni"
+PLUGIN_ROOT = REPO_ROOT / "plugins" / "fleet-optimize"
+STAGED_PLUGIN_NAME = "fleet-optimize"
 SCRIPT_DIR = PLUGIN_ROOT / "skills" / "gepa-omni-skill" / "scripts"
 PREFLIGHT = SCRIPT_DIR / "preflight.py"
 PLUGIN_TARGET_RELATIVE = Path("skills/gepa-omni-skill/scripts/codex_agent_proposer.py")
-TARGET_RELATIVE = Path("plugins/gepa-omni/skills/gepa-omni-skill/scripts/codex_agent_proposer.py")
+TARGET_RELATIVE = Path("plugins/fleet-optimize/skills/gepa-omni-skill/scripts/codex_agent_proposer.py")
 TEST_RELATIVE = Path("tests/test_codex_agent_proposer.py")
 COMPONENT = "codex_agent_proposer_py"
 DEFAULT_CHECK_TIMEOUT_SECONDS = 180.0

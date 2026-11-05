@@ -8,9 +8,9 @@ description: >-
 
 # GEPA Omni
 
-Use the stable `gepa_omni` package for orchestration. The plugin is one of two
-independent plugins in the Qredence marketplace; it does not share a runtime
-or API with Fleet Optimize.
+Use the stable `gepa_omni` package for orchestration. This skill ships in the
+Fleet Optimize plugin and does not share a runtime or API with
+`fleet-optimize-skill`.
 
 The latest upstream GEPA supplies the standalone reflective engine; this
 plugin adds isolated native adapters and orchestration around that contract.
@@ -138,8 +138,8 @@ repository. Preflight remains non-interactive and does not make a model call unl
 Run from the repository root with the development environment:
 
 ```bash
-uv run python plugins/gepa-omni/skills/gepa-omni-skill/scripts/preflight.py --engine gepa
-uv run python plugins/gepa-omni/skills/gepa-omni-skill/scripts/preflight.py --engine omni
+uv run python plugins/fleet-optimize/skills/gepa-omni-skill/scripts/preflight.py --engine gepa
+uv run python plugins/fleet-optimize/skills/gepa-omni-skill/scripts/preflight.py --engine omni
 ```
 
 Raw prompts and responses are not retained by default. Set
