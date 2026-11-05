@@ -709,6 +709,18 @@ def _seed_score(seed_candidate: str, task: Mapping[str, Any]) -> float | None:
         return None
 
 
+def _auto_rank(result: Any, seed_score: float | None) -> float:
+    """Rank a pilot. An engine that never scored cannot beat a measured score."""
+
+    metadata = getattr(result, "metadata", None)
+    if isinstance(metadata, dict) and metadata.get("scored") is False:
+        return float("-inf")
+    score = float(getattr(result, "best_score", float("-inf")))
+    evaluations = max(1, int(getattr(result, "total_evals", 1) or 1))
+    improvement = score - seed_score if seed_score is not None else score
+    return improvement / evaluations
+
+
 def _run_auto(
     seed_candidate: str,
     *,
@@ -784,11 +796,7 @@ def _run_auto(
         pilot_results.append((pilot_engine, result))
 
     def rank(item: tuple[str, Any]) -> float:
-        result = item[1]
-        score = float(getattr(result, "best_score", float("-inf")))
-        evaluations = max(1, int(getattr(result, "total_evals", 1)))
-        improvement = score - seed_score if seed_score is not None else score
-        return improvement / evaluations
+        return _auto_rank(item[1], seed_score)
 
     winning_engine, winning_result = max(pilot_results, key=rank)
     winning_candidate = getattr(winning_result, "best_candidate", None)

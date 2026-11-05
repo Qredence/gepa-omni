@@ -298,9 +298,11 @@ def evaluate_candidate(
         fixture = Path(temp_dir)
         staged_plugin = fixture / "plugins" / STAGED_PLUGIN_NAME
         stage(staged_plugin, plugin_name=STAGED_PLUGIN_NAME, package_format="codex")
+        (fixture / ".git").mkdir()
         test_path = fixture / TEST_RELATIVE
         test_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(REPO_ROOT / TEST_RELATIVE, test_path)
+        shutil.copy2(REPO_ROOT / "tests" / "conftest.py", test_path.parent / "conftest.py")
         shutil.copy2(REPO_ROOT / "pyproject.toml", fixture / "pyproject.toml")
         package_source = REPO_ROOT / "packages" / "gepa-omni"
         shutil.copytree(package_source, fixture / "packages" / "gepa-omni")

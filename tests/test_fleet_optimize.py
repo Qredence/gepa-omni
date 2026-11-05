@@ -129,7 +129,45 @@ def test_generated_artifacts_accept_external_temporary_paths(tmp_path: Path, mon
     assert config.run_dir == str(tmp_path / "run")
 
 
-def test_optimize_forwards_native_arguments_and_batch_evaluator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_config_uses_openai_model_when_reflection_is_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_MODEL", "provider-model")
+
+    config = fleet_optimize.build_config(**_config_paths(tmp_path), reflection_lm="caller-model")
+    default_config = fleet_optimize.build_config(**_config_paths(tmp_path))
+
+    assert config.engine_config["reflection"]["reflection_lm"] == "caller-model"
+    assert default_config.engine_config["reflection"]["reflection_lm"] == "provider-model"
+
+
+def test_optimize_rewrites_home_relative_paths_before_the_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    surface = fleet_optimize._load_surface()
+    config = surface.config_cls(engine="gepa", run_dir="~/runs", output_dir="~/outputs")
+    captured: dict[str, object] = {}
+
+    def fake_optimize_anything(**kwargs: object) -> str:
+        captured.update(kwargs)
+        return "rewritten"
+
+    monkeypatch.setattr(
+        fleet_optimize,
+        "_load_surface",
+        lambda: replace(surface, optimize_anything=fake_optimize_anything),
+    )
+
+    assert fleet_optimize.optimize("seed", evaluator=lambda *_args: 1.0, config=config) == "rewritten"
+    forwarded = captured["config"]
+    assert forwarded.run_dir == str((home / "runs").resolve())
+    assert forwarded.output_dir == str((home / "outputs").resolve())
+
+
+def test_optimize_forwards_native_arguments_and_batch_evaluator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     config = fleet_optimize.build_config(**_config_paths(tmp_path))
     original_surface = fleet_optimize._load_surface()
     captured: dict[str, object] = {}
@@ -175,7 +213,9 @@ def test_optimize_forwards_native_arguments_and_batch_evaluator(tmp_path: Path, 
     }
 
 
-def test_batch_evaluator_order_and_cardinality_remain_upstream_owned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_batch_evaluator_order_and_cardinality_remain_upstream_owned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     config = fleet_optimize.build_config(**_config_paths(tmp_path))
     original_surface = fleet_optimize._load_surface()
     seen: list[tuple[str, int]] = []

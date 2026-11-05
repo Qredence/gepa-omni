@@ -186,6 +186,7 @@ class GePAOmniPackageTests(unittest.TestCase):
             )
 
         self.assertEqual(captured["active_key"], "provider-secret")
+        self.assertEqual(captured["kwargs"]["config"].engine_config["reflection"]["reflection_lm"], "provider-model")
         self.assertEqual(os.environ.get("OPENAI_API_KEY"), None)
         self.assertEqual(result.metadata["heldout_scores"], [1.0, 0.5])
         self.assertEqual(result.metadata["heldout_score"], 0.75)
@@ -303,6 +304,49 @@ class GePAOmniPackageTests(unittest.TestCase):
             )
 
         self.assertEqual(calls[0]["engine"], "gepa")
+
+    def test_explicit_endpoint_is_visible_to_the_plugin_runtime(self) -> None:
+        class FakeRaw:
+            best_candidate = "winner"
+            best_score = 0.9
+            total_evals = 1
+            metadata = {}
+
+        seen: list[object] = []
+
+        def fake_runner(seed: str, **_kwargs: object) -> FakeRaw:
+            del seed
+            seen.append(resolve_endpoint())
+            return FakeRaw()
+
+        with patch.dict(os.environ, {}, clear=True), patch("gepa_omni.api._legacy_runner", return_value=fake_runner):
+            optimize(
+                "seed",
+                evaluator=lambda _candidate, _example: (1.0, {}),
+                api_key="audit-key",
+                config=OmniConfig(
+                    strategy="gepa",
+                    max_evals=2,
+                    base_url="https://provider.example/v1",
+                    model="audit-model",
+                ),
+            )
+
+        self.assertEqual(seen[0].base_url, "https://provider.example/v1")
+        self.assertEqual(seen[0].model, "audit-model")
+        self.assertEqual(seen[0].api_key, "audit-key")
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(EndpointPolicyError):
+                resolve_endpoint()
+
+    def test_chat_completions_url_preserves_the_query_string(self) -> None:
+        endpoint = resolve_endpoint(
+            base_url="https://provider.example/v1?api-version=2024-10-21",
+            model="provider-model",
+            api_key="provider-key",
+        )
+
+        self.assertEqual(endpoint.endpoint, "https://provider.example/v1/chat/completions?api-version=2024-10-21")
 
 
 if __name__ == "__main__":

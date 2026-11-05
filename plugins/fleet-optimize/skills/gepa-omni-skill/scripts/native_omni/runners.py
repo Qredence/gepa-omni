@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from .chat_completions import OpenAIChatCompletionsClient
+from .core import _runtime_checkout
 
 
 class AgentProcessError(RuntimeError):
@@ -62,14 +63,6 @@ class AgentRunner(Protocol):
 def _retain_raw_responses() -> bool:
     value = os.environ.get("GEPA_OMNI_RETAIN_RAW_RESPONSES", "").strip().lower()
     return value in {"1", "true", "yes", "on"}
-
-
-def _runtime_checkout() -> Path:
-    plugin_root = Path(__file__).resolve().parents[4]
-    for candidate in (plugin_root, *plugin_root.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    return plugin_root
 
 
 def _external_work_dir(work_dir: str | Path) -> Path:

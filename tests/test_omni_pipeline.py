@@ -9,7 +9,9 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "plugins" / "fleet-optimize" / "skills" / "gepa-omni-skill" / "scripts"
+SCRIPT_DIR = (
+    Path(__file__).resolve().parents[1] / "plugins" / "fleet-optimize" / "skills" / "gepa-omni-skill" / "scripts"
+)
 _SCRIPT_DIR_STR = str(SCRIPT_DIR)
 sys.path.insert(0, _SCRIPT_DIR_STR)
 try:
@@ -21,6 +23,15 @@ finally:
         sys.path.pop(0)
     elif _SCRIPT_DIR_STR in sys.path:
         sys.path.remove(_SCRIPT_DIR_STR)
+
+
+class AutoRankTests(unittest.TestCase):
+    def test_unscored_pilot_loses_to_a_measured_negative_score(self) -> None:
+        failed = SimpleNamespace(best_score=0.0, total_evals=0, metadata={"scored": False})
+        measured = SimpleNamespace(best_score=-0.2, total_evals=2, metadata={})
+
+        self.assertEqual(omni_pipeline._auto_rank(failed, None), float("-inf"))
+        self.assertGreater(omni_pipeline._auto_rank(measured, None), omni_pipeline._auto_rank(failed, None))
 
 
 class FakeConfig:

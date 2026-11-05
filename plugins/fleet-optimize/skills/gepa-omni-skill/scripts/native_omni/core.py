@@ -270,7 +270,11 @@ NativeResult = Result
 
 
 def _runtime_checkout() -> Path:
-    return Path(__file__).resolve().parents[4]
+    plugin_root = Path(__file__).resolve().parents[4]
+    for candidate in (plugin_root, *plugin_root.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return plugin_root
 
 
 def _external_output_dir(output_dir: str | Path) -> Path:
@@ -431,6 +435,11 @@ class EvalServer:
         examples = list(self.iter_split(split))
         if not examples:
             return self.evaluate(candidate)
+        remaining = self.budget.remaining
+        if remaining == 0:
+            raise BudgetExhausted(f"Eval budget exhausted: {self.budget.used}/{self.budget.max_evals} used")
+        if remaining is not None and len(examples) > remaining:
+            examples = examples[:remaining]
         results = self.evaluate_pairs(
             [(candidate, example) for _, example in examples], example_ids=[key for key, _ in examples]
         )
@@ -461,8 +470,9 @@ class EvalServer:
         return entry
 
     def result(self, *, metadata: Mapping[str, Any] | None = None) -> Result:
-        score = self._best_score if self._best_score != float("-inf") else 0.0
-        merged_metadata = {"budget": self.budget.status(), **dict(metadata or {})}
+        scored = self._best_score != float("-inf")
+        score = self._best_score if scored else 0.0
+        merged_metadata = {"budget": self.budget.status(), "scored": scored, **dict(metadata or {})}
         return Result(self._best_candidate, score, self.budget.used, self.eval_log, merged_metadata)
 
     def start(self) -> "EvalServer":  # noqa: C901 - compact HTTP handler keeps transport local to the server

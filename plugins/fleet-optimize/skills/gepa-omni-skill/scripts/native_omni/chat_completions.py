@@ -20,11 +20,22 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from gepa_omni.security import EndpointPolicyError, redact_diagnostic, resolve_endpoint
+from gepa_omni.security import EndpointPolicyError, chat_completions_url, redact_diagnostic, resolve_endpoint
 
 
 class ChatCompletionError(RuntimeError):
     """Raised when an OpenAI-compatible Chat Completions request fails."""
+
+
+class _RejectRedirects(urllib.request.HTTPRedirectHandler):
+    """Refuse to follow redirects so the bearer token stays on the approved host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        raise urllib.error.HTTPError(req.full_url, code, "Chat Completions redirects are not followed", headers, fp)
+
+
+def _urlopen_without_redirects(request: urllib.request.Request, timeout: float) -> Any:
+    return urllib.request.build_opener(_RejectRedirects).open(request, timeout=timeout)
 
 
 Urlopen = Callable[..., Any]
@@ -104,13 +115,11 @@ class OpenAIChatCompletionsClient:
         )
         if (self.input_cost_per_million is None) != (self.output_cost_per_million is None):
             raise ValueError("input/output pricing must be supplied together")
-        self._opener = opener or urllib.request.urlopen
+        self._opener = opener or _urlopen_without_redirects
 
     @property
     def endpoint(self) -> str:
-        if self.base_url.endswith("/chat/completions"):
-            return self.base_url
-        return self.base_url + "/chat/completions"
+        return chat_completions_url(self.base_url)
 
     @staticmethod
     def _usage_int(usage: Mapping[str, Any], *names: str) -> int:

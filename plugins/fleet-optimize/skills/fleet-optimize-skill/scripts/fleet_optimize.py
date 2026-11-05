@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 import tempfile
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 from types import ModuleType
@@ -251,6 +252,10 @@ def build_config(
     engine_values.setdefault("selection_strategy", default_selection)
     if reflection_lm is not None:
         reflection_values.setdefault("reflection_lm", reflection_lm)
+    elif "reflection_lm" not in reflection_values:
+        env_model = os.environ.get("OPENAI_MODEL", "").strip()
+        if env_model:
+            reflection_values["reflection_lm"] = env_model
     if reflection_lm_kwargs is not None:
         reflection_values.setdefault("reflection_lm_kwargs", dict(reflection_lm_kwargs))
 
@@ -266,15 +271,21 @@ def build_config(
     )
 
 
-def _validate_config(config: Any, surface: UpstreamSurface) -> None:
+def _validate_config(config: Any, surface: UpstreamSurface) -> Any:
     if not isinstance(config, surface.config_cls):
         raise TypeError(
             f"Fleet Optimize requires the latest upstream OptimizeAnythingConfig; got {type(config).__name__}"
         )
+    updates: dict[str, str] = {}
     for label in ("run_dir", "output_dir"):
         value = getattr(config, label, None)
         if value is not None:
-            _external_path(value, label=label, prefix="fleet-optimize-validation-")
+            resolved = _validate_external_path(value, label=label)
+            if resolved != value:
+                updates[label] = resolved
+    if not updates:
+        return config
+    return replace(config, **updates)
 
 
 def optimize(
@@ -292,8 +303,7 @@ def optimize(
     """Run the latest upstream GEPA engine with safe Fleet defaults."""
 
     surface = _load_surface()
-    effective_config = config if config is not None else build_config()
-    _validate_config(effective_config, surface)
+    effective_config = _validate_config(config if config is not None else build_config(), surface)
     return surface.optimize_anything(
         seed_candidate=seed_candidate,
         evaluator=evaluator,

@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -24,9 +25,11 @@ from codex_agent_proposer import CodexAgentProposer  # noqa: E402
 from native_omni import (  # noqa: E402
     AgentProcessError,
     AgentTimeout,
+    ChatCompletionError,
     ClaudeAgentRunner,
     CodexAgentRunner,
     OpenAIChatCompletionRunner,
+    OpenAIChatCompletionsClient,
     PiAgentRunner,
     TokenBudgetExceeded,
 )
@@ -117,7 +120,7 @@ class NativeRunnerTests(unittest.TestCase):
     def test_environment_values_override_compatibility_constructor_values(self) -> None:
         with patch.dict(
             os.environ,
-                {
+            {
                 "OPENAI_BASE_URL": "https://api.openai.com/v1",
                 "OPENAI_MODEL": "env-model",
                 "OPENAI_API_KEY": "env-key",
@@ -130,6 +133,46 @@ class NativeRunnerTests(unittest.TestCase):
         self.assertEqual(request.full_url, "https://api.openai.com/v1/chat/completions")
         self.assertEqual(request.get_header("Authorization"), "Bearer env-key")
         self.assertEqual(json.loads(request.data.decode())["model"], "env-model")
+
+    def test_query_string_stays_on_the_chat_completions_url(self) -> None:
+        client = OpenAIChatCompletionsClient(
+            base_url="https://provider.example/v1?api-version=2024-10-21",
+            model="provider-model",
+            api_key="provider-key",
+        )
+
+        self.assertEqual(
+            client.endpoint,
+            "https://provider.example/v1/chat/completions?api-version=2024-10-21",
+        )
+
+    def test_redirect_does_not_move_the_bearer_token(self) -> None:
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                self.send_response(302)
+                self.send_header("Location", "http://127.0.0.1:9/stolen")
+                self.end_headers()
+
+            def log_message(self, _format: str, *_args: object) -> None:
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = OpenAIChatCompletionsClient(
+                base_url=f"http://127.0.0.1:{server.server_address[1]}/v1",
+                model="local-model",
+                api_key="secret",
+            )
+            with self.assertRaises(ChatCompletionError) as caught:
+                client.complete([{"role": "user", "content": "hi"}])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        self.assertIn("HTTP 302", str(caught.exception))
 
     def test_openai_key_is_rejected_for_a_non_openai_environment_endpoint(self) -> None:
         with patch.dict(

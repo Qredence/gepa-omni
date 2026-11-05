@@ -211,7 +211,8 @@ class BestOfNEngine:
             if cfg.max_token_cost is not None and cost == 0:
                 break
 
-        if best_score == float("-inf"):
+        scored = best_score != float("-inf")
+        if not scored:
             best_score = 0.0
         return Result(
             best_candidate,
@@ -219,6 +220,7 @@ class BestOfNEngine:
             server.budget.used,
             server.eval_log,
             {
+                "scored": scored,
                 "agent_backend": cfg.agent_backend,
                 "runner_profile": cfg.agent_backend,
                 "work_dir": str(root),

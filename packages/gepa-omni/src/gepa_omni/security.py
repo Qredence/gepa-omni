@@ -6,7 +6,9 @@ import ipaddress
 import os
 import re
 import socket
-from dataclasses import dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar, Token
+from dataclasses import dataclass, replace
 from urllib.parse import urlsplit, urlunsplit
 
 
@@ -49,9 +51,7 @@ class EndpointConfiguration:
 
     @property
     def endpoint(self) -> str:
-        if self.base_url.endswith("/chat/completions"):
-            return self.base_url
-        return self.base_url + "/chat/completions"
+        return chat_completions_url(self.base_url)
 
 
 def _truthy(value: str | None) -> bool:
@@ -113,6 +113,30 @@ def _validate_url(base_url: str, *, allow_private: bool) -> tuple[str, str, bool
     return sanitized, host, host in OFFICIAL_OPENAI_HOSTS
 
 
+def chat_completions_url(base_url: str) -> str:
+    """Join ``/chat/completions`` without moving an existing query into the path."""
+
+    parsed = urlsplit(base_url)
+    path = parsed.path.rstrip("/")
+    if not path.endswith("/chat/completions"):
+        path = f"{path}/chat/completions"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, ""))
+
+
+_CALL_ENDPOINT: ContextVar[EndpointConfiguration | None] = ContextVar("gepa_omni_call_endpoint", default=None)
+
+
+@contextmanager
+def use_resolved_endpoint(endpoint: EndpointConfiguration):
+    """Expose one already validated endpoint to nested plugin clients."""
+
+    token: Token[EndpointConfiguration | None] = _CALL_ENDPOINT.set(endpoint)
+    try:
+        yield
+    finally:
+        _CALL_ENDPOINT.reset(token)
+
+
 def resolve_endpoint(
     *,
     base_url: str | None = None,
@@ -127,6 +151,11 @@ def resolve_endpoint(
     An explicit ``api_key`` or provider-specific variable is required there.
     """
 
+    bound = _CALL_ENDPOINT.get()
+    if bound is not None and base_url is None and api_key is None and api_key_env is None and environ is None:
+        if model is None or model.strip() == bound.model:
+            return bound
+        return replace(bound, model=model.strip())
     env = os.environ if environ is None else environ
     selected_url = env.get("OPENAI_BASE_URL") or base_url
     selected_model = env.get("OPENAI_MODEL") or model
@@ -171,5 +200,7 @@ __all__ = [
     "EndpointPolicyError",
     "OFFICIAL_OPENAI_HOSTS",
     "redact_diagnostic",
+    "chat_completions_url",
     "resolve_endpoint",
+    "use_resolved_endpoint",
 ]

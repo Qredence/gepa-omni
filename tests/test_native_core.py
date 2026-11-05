@@ -11,12 +11,7 @@ from pathlib import Path
 
 
 SCRIPT_DIR = (
-    Path(__file__).resolve().parents[1]
-    / "plugins"
-    / "fleet-optimize"
-    / "skills"
-    / "gepa-omni-skill"
-    / "scripts"
+    Path(__file__).resolve().parents[1] / "plugins" / "fleet-optimize" / "skills" / "gepa-omni-skill" / "scripts"
 )
 sys.path.insert(0, str(SCRIPT_DIR))
 from native_omni import (  # noqa: E402
@@ -99,6 +94,18 @@ class NativeCoreTests(unittest.TestCase):
         with self.assertRaises(BudgetExhausted):
             server.evaluate("xx", 1)
 
+    def test_split_scoring_stops_at_the_remaining_budget(self) -> None:
+        task = Task.from_mapping(
+            {"evaluator": lambda _candidate, item: float(item), "dataset": [1, 2, 3]},
+        )
+        server = EvalServer(task, BudgetTracker(max_evals=1))
+
+        score, info = server.evaluate_split("candidate", "train")
+
+        self.assertEqual(score, 1.0)
+        self.assertEqual(info["num_evaluated"], 1)
+        self.assertEqual(server.budget.used, 1)
+
     def test_atomic_reservation_prevents_concurrent_over_budget_evaluator_calls(self) -> None:
         started = threading.Event()
         release = threading.Event()
@@ -167,6 +174,12 @@ class NativeCoreTests(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as error:
                 urllib.request.urlopen(request)
             self.assertEqual(error.exception.code, 404)
+
+    def test_output_dir_inside_repository_is_rejected(self) -> None:
+        result = NativeResult("best", 0.9, 1, [], {})
+        inside_repo = Path(__file__).resolve().parents[1] / "benchmarks"
+        with self.assertRaisesRegex(ValueError, "outside the plugin checkout"):
+            result.persist(inside_repo)
 
     def test_result_and_trace_are_persisted_in_external_output_dir(self) -> None:
         task = Task.from_mapping({"evaluator": lambda _candidate, _item: (0.8, {"ok": True}), "dataset": ["one"]})

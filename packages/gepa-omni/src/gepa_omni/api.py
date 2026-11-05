@@ -14,7 +14,7 @@ from typing import Any
 
 from .allocation import plan_auto_allocation
 from .config import OmniConfig
-from .security import EndpointConfiguration, resolve_endpoint
+from .security import EndpointConfiguration, resolve_endpoint, use_resolved_endpoint
 
 
 @dataclass
@@ -196,7 +196,9 @@ def _standalone_engine(
     run_root = _validate_external_path(config.run_dir, label="run_dir")
     output_root = _validate_external_path(config.output_dir, label="output_dir")
     engine_config: dict[str, Any] = {}
-    if engine != "gepa" and config.model is not None:
+    if engine == "gepa":
+        engine_config["reflection"] = {"reflection_lm": endpoint.model}
+    elif config.model is not None:
         engine_config["model"] = config.model
     gepa_config = OptimizeAnythingConfig(
         engine=engine,
@@ -302,6 +304,8 @@ def _standalone_auto(
 
     def rank(item: tuple[str, OptimizationResult]) -> float:
         _engine, result = item
+        if result.metadata.get("scored") is False:
+            return float("-inf")
         improvement = result.best_score - seed_score if seed_score is not None else result.best_score
         return improvement / max(1, result.total_evals)
 
@@ -333,6 +337,26 @@ def _standalone_auto(
         "pilot_scores": {engine: pilot.best_score for engine, pilot in pilots},
     }
     return result
+
+
+def _call_plugin_runner(
+    runner: Any,
+    seed_candidate: str,
+    options: dict[str, Any],
+    *,
+    base_url: str | None,
+    model: str | None,
+    api_key: str | None,
+    api_key_env: str | None,
+) -> Any:
+    """Give the plugin the endpoint the caller supplied, not only the process environment."""
+
+    explicit = any(isinstance(value, str) and value.strip() for value in (base_url, model, api_key, api_key_env))
+    if not explicit:
+        return runner(seed_candidate, **options)
+    endpoint = resolve_endpoint(base_url=base_url, model=model, api_key=api_key, api_key_env=api_key_env)
+    with use_resolved_endpoint(endpoint):
+        return runner(seed_candidate, **options)
 
 
 def run_optimization(
@@ -433,7 +457,15 @@ def run_optimization(
         )
         options.setdefault("codex_input_cost_per_million", selected.input_cost_per_million)
         options.setdefault("codex_output_cost_per_million", selected.output_cost_per_million)
-        raw = runner(seed_candidate, **options)
+        raw = _call_plugin_runner(
+            runner,
+            seed_candidate,
+            options,
+            base_url=base_url,
+            model=selected.model,
+            api_key=api_key,
+            api_key_env=api_key_env,
+        )
         return _result(raw, strategy=selected.strategy, engine=selected_engine)
     if selected.strategy == "omni":
         raise RuntimeError("strategy='omni' requires the GEPA Omni plugin runtime; install the plugin adapter")
