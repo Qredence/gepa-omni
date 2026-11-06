@@ -1,0 +1,22 @@
+.cursor/settings.json
+  h_f276322eb5eb9f 1-7
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/autoresearch.py
+  h_f276322eb5eb9f 30,365,368,372
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/best_of_n.py
+  h_f276322eb5eb9f 19,214,217,221
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/core.py
+  h_f276322eb5eb9f 272-277,479-480
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/meta_harness.py
+  h_f276322eb5eb9f 28,393,396,400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "171d2fef723e71d1af57c4a44c1e75f4afd55592",
+  "prompts": {},
+  "humans": {
+    "h_f276322eb5eb9f": {
+      "author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
