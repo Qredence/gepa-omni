@@ -48,6 +48,10 @@ def batch_evaluator(pairs, opt_states=None):
 ```
 
 The return list must have the same length and order as `pairs`. If a whole
-batch fails, return per-pair transient diagnostics or let upstream GEPA apply
-its configured exception policy. Do not cache transient failures as successful
-evaluations.
+batch fails, raise and let upstream GEPA apply its configured exception policy.
+With `raise_on_exception=False`, GEPA substitutes `(0.0, {"error": ...,
+"_gepa_transient_failure": True})` for every pair and does not cache those
+results. Do not return ordinary `(score, info)` values for a failed batch,
+because they are scored and cached as real evaluations; if the evaluator must
+report the failure itself, set `"_gepa_transient_failure": True` in each
+pair's `info`.
