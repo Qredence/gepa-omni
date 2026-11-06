@@ -1,0 +1,19 @@
+benchmarks/gepa-omni/benchmark.py
+  s_059f79a4d069a5::t_b7f53c5b495744 93-95,155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "47c0e1a05733e78dc8b9ce0d8c6f2feb57b77db7",
+  "prompts": {},
+  "sessions": {
+    "s_059f79a4d069a5": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "fa65a437-9eff-4265-9869-03277cc08000",
+        "model": "grok-4.7"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
