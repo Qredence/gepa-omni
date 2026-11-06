@@ -1,0 +1,36 @@
+tests/test_gepa_omni_benchmark.py
+  s_0895c9e89530e5::t_2773cd080966d1 32-33,36-39,41
+  s_0895c9e89530e5::t_8cdace1836b5e0 20
+  s_0895c9e89530e5::t_395f7471a4b2ef 22-23
+  s_0895c9e89530e5::t_fc74c8fb0a22dc 40
+benchmarks/gepa-omni/README.md
+  s_0895c9e89530e5::t_fc74c8fb0a22dc 3-7,15-17
+benchmarks/gepa-omni/benchmark.py
+  s_0895c9e89530e5::t_be83c87664a85e 37-40,42-43,81,83,89,93-97,104-109,116-118,130,132-133,138-141,143-146,158-161
+  s_0895c9e89530e5::t_6020878200e6e6 1,3-4
+  s_0895c9e89530e5::t_fc74c8fb0a22dc 41,98-103,142
+  s_0895c9e89530e5::t_2773cd080966d1 90-92
+  s_0895c9e89530e5::t_395f7471a4b2ef 129,150,153,168
+tests/test_gepa_omni_package.py
+  s_0895c9e89530e5::t_2773cd080966d1 51,66-70,78-87
+  s_0895c9e89530e5::t_d3441ec9f9e7c7 52-55,72-75
+  s_0895c9e89530e5::t_8cdace1836b5e0 56-65,71,76-77
+packages/gepa-omni/src/gepa_omni/security.py
+  s_0895c9e89530e5::t_be83c87664a85e 160-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0772c9432534e0daa8a602506d7570ae9b15f56e",
+  "prompts": {},
+  "sessions": {
+    "s_0895c9e89530e5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1af40-1f4d-7f40-86b7-616692fc47a7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
