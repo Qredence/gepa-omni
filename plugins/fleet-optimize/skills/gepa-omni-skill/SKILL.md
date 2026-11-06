@@ -75,10 +75,18 @@ def evaluate(candidate: str, example: object) -> tuple[float, dict]:
     return grade(output, example), {"output": output}
 ```
 
-For a single task, omit `dataset` and `valset` and let the evaluator score the
-candidate directly. For multiple examples, use a representative `valset` for
-selection. For stochastic systems, average several samples inside the
-evaluator rather than selecting a lucky one.
+This is the dataset form. For a single task, omit `dataset` and `valset`; the
+evaluator then takes only `candidate` and scores it directly:
+
+```python
+def evaluate(candidate: str) -> tuple[float, dict]:
+    output = run_system(candidate)
+    return grade(output), {"output": output}
+```
+
+For multiple examples, use a representative `valset` for selection. For
+stochastic systems, average several samples inside the evaluator rather than
+selecting a lucky one.
 
 The direct upstream launcher is also available when only standalone GEPA is
 needed:
