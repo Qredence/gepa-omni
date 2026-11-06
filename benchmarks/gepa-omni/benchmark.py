@@ -1,17 +1,14 @@
-"""Reproducible GEPA Omni comparison harness.
+"""Credential-free report-shape smoke harness for GEPA Omni.
 
-The harness is credential-free by default. A live adapter can be supplied by
-the caller, but the aggregation contract is identical for fixture and live
-runs: equal seeds, splits, evaluation budgets, and proposer-cost caps.
+Fixture mode does not run optimizers or evaluators and emits no performance
+measurements. Real engine comparisons require a separate live adapter.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import statistics
-import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,13 +34,13 @@ class BenchmarkRun:
     case: str
     engine: str
     seed: int
-    heldout_improvement: float
-    evaluations: int
-    dollars: float
-    wall_clock_seconds: float
-    failed: bool
-    selection_test_gap: float
-    reached_target: bool
+    heldout_improvement: float | None
+    evaluations: int | None
+    dollars: float | None
+    wall_clock_seconds: float | None
+    failed: bool | None
+    selection_test_gap: float | None
+    reached_target: bool | None
     evaluations_to_target: int | None
     dollars_to_target: float | None
 
@@ -81,28 +78,44 @@ def aggregate(runs: Iterable[BenchmarkRun]) -> dict[str, Any]:
     grouped: dict[tuple[str, str], list[BenchmarkRun]] = {}
     for run in runs:
         grouped.setdefault((run.case, run.engine), []).append(run)
-    report: dict[str, Any] = {"schema_version": 1, "groups": []}
+    report: dict[str, Any] = {"schema_version": 2, "groups": []}
     for (case, engine), values in sorted(grouped.items()):
-        improvements = [value.heldout_improvement for value in values]
+        improvements = [value.heldout_improvement for value in values if value.heldout_improvement is not None]
         report["groups"].append(
             {
                 "case": case,
                 "engine": engine,
                 "seeds": len(values),
-                "heldout_improvement_median": statistics.median(improvements),
-                "heldout_improvement_variance": statistics.pvariance(improvements) if len(values) > 1 else 0.0,
-                "evaluations_median": statistics.median(value.evaluations for value in values),
-                "dollars_median": statistics.median(value.dollars for value in values),
-                "wall_clock_seconds_median": statistics.median(value.wall_clock_seconds for value in values),
-                "failure_rate": sum(value.failed for value in values) / len(values),
-                "target_rate": sum(value.reached_target for value in values) / len(values),
+                "heldout_improvement_median": _median_or_none(improvements),
+                "heldout_improvement_variance": (
+                    statistics.pvariance(improvements) if len(improvements) > 1 else 0.0 if improvements else None
+                ),
+                "evaluations_median": _median_or_none(value.evaluations for value in values if value.evaluations is not None),
+                "dollars_median": _median_or_none(value.dollars for value in values if value.dollars is not None),
+                "wall_clock_seconds_median": _median_or_none(
+                    value.wall_clock_seconds for value in values if value.wall_clock_seconds is not None
+                ),
+                "failure_rate": (
+                    sum(value.failed for value in values if value.failed is not None)
+                    / sum(value.failed is not None for value in values)
+                    if any(value.failed is not None for value in values)
+                    else None
+                ),
+                "target_rate": (
+                    sum(value.reached_target for value in values if value.reached_target is not None)
+                    / sum(value.reached_target is not None for value in values)
+                    if any(value.reached_target is not None for value in values)
+                    else None
+                ),
                 "evaluations_to_target_median": _median_or_none(
                     value.evaluations_to_target for value in values if value.evaluations_to_target is not None
                 ),
                 "dollars_to_target_median": _median_or_none(
                     value.dollars_to_target for value in values if value.dollars_to_target is not None
                 ),
-                "selection_test_gap_median": statistics.median(value.selection_test_gap for value in values),
+                "selection_test_gap_median": _median_or_none(
+                    value.selection_test_gap for value in values if value.selection_test_gap is not None
+                ),
             }
         )
     return report
@@ -113,51 +126,46 @@ def _median_or_none(values: Iterable[int | float]) -> float | None:
     return statistics.median(values) if values else None
 
 
-def fixture_runner(engine: str, case: BenchmarkCase, seed: int, *, max_evals: int, max_dollars: float) -> BenchmarkRun:
-    """Run a deterministic local fixture used by CI and harness smoke tests."""
+def fixture_runner(engine: str, case: BenchmarkCase, seed: int) -> BenchmarkRun:
+    """Return a smoke-run record without fabricating engine measurements."""
 
-    started = time.perf_counter()
-    engine_bonus = {"gepa": 0.55, "autoresearch": 0.60, "meta_harness": 0.58, "best_of_n": 0.50, "omni": 0.63}[engine]
-    noise = ((seed * 17 + len(case.name) * 3) % 11 - 5) / 100.0
-    heldout = max(0.0, min(1.0, engine_bonus + noise))
-    selection = max(0.0, min(1.0, heldout + 0.02))
-    reached_target = heldout >= case.target
-    evaluations_to_target = max(1, math.ceil(max_evals * case.target / heldout)) if reached_target and heldout else None
-    dollars_to_target = max_dollars * evaluations_to_target / max_evals if evaluations_to_target is not None else None
+    if engine not in ENGINES:
+        raise ValueError(f"unknown engine: {engine}")
     return BenchmarkRun(
         case=case.name,
         engine=engine,
         seed=seed,
-        heldout_improvement=heldout,
-        evaluations=max_evals,
-        dollars=max_dollars,
-        wall_clock_seconds=time.perf_counter() - started,
-        failed=False,
-        selection_test_gap=selection - heldout,
-        reached_target=reached_target,
-        evaluations_to_target=evaluations_to_target,
-        dollars_to_target=dollars_to_target,
+        heldout_improvement=None,
+        evaluations=None,
+        dollars=None,
+        wall_clock_seconds=None,
+        failed=None,
+        selection_test_gap=None,
+        reached_target=None,
+        evaluations_to_target=None,
+        dollars_to_target=None,
     )
 
 
-def run_fixture(*, seeds: Iterable[int] = range(5), max_evals: int = 100, max_dollars: float = 10.0) -> dict[str, Any]:
+def run_fixture(*, seeds: Iterable[int] = range(5)) -> dict[str, Any]:
     seed_values = tuple(seeds)
     runs = [
-        fixture_runner(engine, case, seed, max_evals=max_evals, max_dollars=max_dollars)
+        fixture_runner(engine, case, seed)
         for case in benchmark_cases()
         for engine in ENGINES
         for seed in seed_values
     ]
-    return aggregate(runs)
+    report = aggregate(runs)
+    report["mode"] = "fixture"
+    report["description"] = "Schema smoke run only; no optimization engines or evaluators were run."
+    return report
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--max-evals", type=int, default=100)
-    parser.add_argument("--max-dollars", type=float, default=10.0)
     args = parser.parse_args(argv)
-    report = run_fixture(max_evals=args.max_evals, max_dollars=args.max_dollars)
+    report = run_fixture()
     text = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.write_text(text, encoding="utf-8")

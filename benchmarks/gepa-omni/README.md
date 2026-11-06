@@ -1,10 +1,10 @@
 # GEPA Omni benchmark harness
 
-`benchmark.py` defines the equal-budget benchmark contract for prompt,
-deterministic code/config, and noisy LLM-as-judge tasks. The credential-free
-fixture runs five seeds for each standalone engine and Omni, and emits median,
-variance, cost, evaluation, time-to-target, duration, failure, target, and
-selection-to-test gap fields.
+`benchmark.py` currently provides a credential-free schema smoke run for
+prompt, deterministic code/config, and noisy LLM-as-judge case labels. It checks
+that each engine/case/seed group can be represented in the report; it does not
+run optimizers or evaluators. Performance fields are therefore `null` and must
+not be used to compare engines.
 
 Run the local smoke benchmark:
 
@@ -12,6 +12,6 @@ Run the local smoke benchmark:
 uv run python benchmarks/gepa-omni/benchmark.py --output /tmp/gepa-omni-benchmark.json
 ```
 
-Live adapters may replace `fixture_runner` after explicit credential and model
-setup. They must preserve the same seed, split, evaluation budget, proposer
-cost cap, and report schema. CI runs only the deterministic fixture.
+Live benchmark adapters must run the actual engines and evaluators, use the
+same seed, data split, evaluation budget, and proposer cost cap, and populate
+the performance fields from observed results. CI runs only the smoke fixture.

@@ -48,6 +48,43 @@ class GePAOmniPackageTests(unittest.TestCase):
         self.assertEqual(endpoint.api_key, "provider-secret")
         self.assertEqual(endpoint.key_source, "GEPA_OMNI_API_KEY")
 
+    def test_explicit_endpoint_and_model_override_environment(self) -> None:
+        with patch(
+            "gepa_omni.security.socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", 0))],
+        ):
+            endpoint = resolve_endpoint(
+                base_url="https://provider.example/v1",
+                model="explicit-model",
+                api_key="provider-secret",
+                environ={
+                    "OPENAI_BASE_URL": "https://api.openai.com/v1",
+                    "OPENAI_MODEL": "environment-model",
+                    "OPENAI_API_KEY": "must-not-be-used",
+                },
+            )
+        self.assertEqual(endpoint.base_url, "https://provider.example/v1")
+        self.assertEqual(endpoint.model, "explicit-model")
+        self.assertEqual(endpoint.api_key, "provider-secret")
+
+    def test_explicit_third_party_endpoint_uses_its_credential_policy(self) -> None:
+        with (
+            patch(
+                "gepa_omni.security.socket.getaddrinfo",
+                return_value=[(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", 0))],
+            ),
+            self.assertRaisesRegex(EndpointPolicyError, "not permitted"),
+        ):
+            resolve_endpoint(
+                base_url="https://provider.example/v1",
+                model="explicit-model",
+                environ={
+                    "OPENAI_BASE_URL": "https://api.openai.com/v1",
+                    "OPENAI_MODEL": "environment-model",
+                    "OPENAI_API_KEY": "must-not-leave-openai",
+                },
+            )
+
     def test_openai_key_alias_cannot_be_selected_for_third_party_endpoint(self) -> None:
         with self.assertRaisesRegex(EndpointPolicyError, "not permitted"):
             resolve_endpoint(

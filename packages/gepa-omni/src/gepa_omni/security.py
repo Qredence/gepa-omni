@@ -157,8 +157,8 @@ def resolve_endpoint(
             return bound
         return replace(bound, model=model.strip())
     env = os.environ if environ is None else environ
-    selected_url = env.get("OPENAI_BASE_URL") or base_url
-    selected_model = env.get("OPENAI_MODEL") or model
+    selected_url = base_url if base_url is not None else env.get("OPENAI_BASE_URL")
+    selected_model = model if model is not None else env.get("OPENAI_MODEL")
     if not isinstance(selected_url, str) or not selected_url.strip():
         raise EndpointPolicyError("missing required endpoint configuration: OPENAI_BASE_URL")
     if not isinstance(selected_model, str) or not selected_model.strip():
