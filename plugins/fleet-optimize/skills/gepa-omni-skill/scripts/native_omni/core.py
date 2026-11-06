@@ -269,6 +269,12 @@ class Result:
 NativeResult = Result
 
 
+def _published_score(score: float) -> tuple[float, bool]:
+    if score == float("-inf"):
+        return 0.0, False
+    return score, True
+
+
 def _runtime_checkout() -> Path:
     plugin_root = Path(__file__).resolve().parents[4]
     for candidate in (plugin_root, *plugin_root.parents):
@@ -470,9 +476,8 @@ class EvalServer:
         return entry
 
     def result(self, *, metadata: Mapping[str, Any] | None = None) -> Result:
-        scored = self._best_score != float("-inf")
-        score = self._best_score if scored else 0.0
-        merged_metadata = {"budget": self.budget.status(), "scored": scored, **dict(metadata or {})}
+        score, was_scored = _published_score(self._best_score)
+        merged_metadata = {"budget": self.budget.status(), "scored": was_scored, **dict(metadata or {})}
         return Result(self._best_candidate, score, self.budget.used, self.eval_log, merged_metadata)
 
     def start(self) -> "EvalServer":  # noqa: C901 - compact HTTP handler keeps transport local to the server

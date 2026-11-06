@@ -16,7 +16,7 @@ from .common import (
     score_candidate,
     safe_name,
 )
-from .core import EvalServer, Result, Task
+from .core import EvalServer, Result, Task, _published_score
 
 
 _FENCE_RE = re.compile(r"```(?:[A-Za-z0-9_+.-]*)?\s*\n(.*?)```", re.DOTALL)
@@ -211,16 +211,14 @@ class BestOfNEngine:
             if cfg.max_token_cost is not None and cost == 0:
                 break
 
-        scored = best_score != float("-inf")
-        if not scored:
-            best_score = 0.0
+        published_score, was_scored = _published_score(best_score)
         return Result(
             best_candidate,
-            best_score,
+            published_score,
             server.budget.used,
             server.eval_log,
             {
-                "scored": scored,
+                "scored": was_scored,
                 "agent_backend": cfg.agent_backend,
                 "runner_profile": cfg.agent_backend,
                 "work_dir": str(root),

@@ -27,7 +27,7 @@ from .common import (
     write_json,
     workspace_context,
 )
-from .core import BudgetTracker, EvalServer, Result, Task
+from .core import BudgetTracker, EvalServer, Result, Task, _published_score
 
 
 @dataclass
@@ -362,16 +362,14 @@ class AutoResearchEngine:
             if callable(close):
                 close()
 
-        scored = best_score != float("-inf")
-        if not scored:
-            best_score = 0.0
+        published_score, was_scored = _published_score(best_score)
         result = Result(
             best_candidate,
-            best_score,
+            published_score,
             server.budget.used,
             server.eval_log,
             {
-                "scored": scored,
+                "scored": was_scored,
                 "agent_backend": cfg.agent_backend,
                 "runner_profile": cfg.agent_backend,
                 "work_dir": str(work_dir),
