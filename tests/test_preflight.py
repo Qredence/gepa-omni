@@ -196,7 +196,9 @@ class PreflightTests(unittest.TestCase):
             result = preflight.main(["--engine", "autoresearch"])
 
         self.assertEqual(result, 0)
-        self.assertIn("PROVIDER_KEY is configured", output.getvalue())
+        text = output.getvalue()
+        self.assertIn("approved endpoint API key is configured", text)
+        self.assertNotIn("provider-secret", text)
 
     def test_incomplete_chat_pricing_fails(self) -> None:
         self._configure_api()

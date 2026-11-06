@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import socket
 import urllib.error
 import urllib.request
@@ -20,7 +21,14 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from gepa_omni.security import EndpointPolicyError, chat_completions_url, redact_diagnostic, resolve_endpoint
+from gepa_omni.security import (
+    EndpointConfiguration,
+    EndpointPolicyError,
+    bound_call_endpoint,
+    chat_completions_url,
+    redact_diagnostic,
+    resolve_endpoint,
+)
 
 
 class ChatCompletionError(RuntimeError):
@@ -39,6 +47,37 @@ def _urlopen_without_redirects(request: urllib.request.Request, timeout: float) 
 
 
 Urlopen = Callable[..., Any]
+
+
+def _configured(name: str) -> bool:
+    value = os.environ.get(name)
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _resolve_client_endpoint(
+    *,
+    base_url: str | None,
+    model: str | None,
+    api_key: str | None,
+    api_key_env: str | None,
+) -> EndpointConfiguration:
+    """Prefer a bound public-API endpoint, then environment configuration.
+
+    Constructor arguments are compatibility hints for tests and embeddings.
+    They apply only when this call has no bound endpoint and the corresponding
+    environment variable is unset. An environment URL also selects that
+    endpoint's credential, so a constructor key cannot follow the operator's host.
+    """
+
+    if bound_call_endpoint() is not None:
+        return resolve_endpoint()
+    environment_url = _configured("OPENAI_BASE_URL")
+    return resolve_endpoint(
+        base_url=None if environment_url else base_url,
+        model=None if _configured("OPENAI_MODEL") else model,
+        api_key=None if environment_url else api_key,
+        api_key_env=None if environment_url else api_key_env,
+    )
 
 
 def _content_text(value: Any) -> str:
@@ -90,7 +129,7 @@ class OpenAIChatCompletionsClient:
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("timeout_seconds must be a positive finite number")
         try:
-            endpoint = resolve_endpoint(
+            endpoint = _resolve_client_endpoint(
                 base_url=base_url,
                 model=model,
                 api_key=api_key,

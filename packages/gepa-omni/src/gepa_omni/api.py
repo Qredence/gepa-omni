@@ -215,9 +215,9 @@ def _standalone_engine(
     kwargs.pop("test_set", None)
     with _endpoint_environment(endpoint):
         raw = optimize_anything(seed_candidate, config=gepa_config, **kwargs)
-    result = _result(raw, strategy=config.strategy, engine=engine)
-    if score_heldout:
-        result.metadata.update(_heldout_metadata(result.best_candidate, task))
+        result = _result(raw, strategy=config.strategy, engine=engine)
+        if score_heldout:
+            result.metadata.update(_heldout_metadata(result.best_candidate, task))
     return result
 
 
@@ -274,7 +274,14 @@ def _standalone_auto(
             api_key_env=api_key_env,
         )
 
-    seed_score = _seed_score(seed_candidate, task)
+    endpoint = resolve_endpoint(
+        base_url=base_url or config.base_url,
+        model=config.model,
+        api_key=api_key,
+        api_key_env=api_key_env,
+    )
+    with _endpoint_environment(endpoint):
+        seed_score = _seed_score(seed_candidate, task)
     pilot_task = dict(task)
     pilot_task.pop("test_set", None)
     pilots: list[tuple[str, OptimizationResult]] = []
@@ -448,7 +455,7 @@ def run_optimization(
                 "run_dir": selected.run_dir,
                 "output_dir": selected.output_dir,
                 "runner_profile": selected.runner_profile,
-                "agent_model": selected.model,
+                "agent_model": selected.model or options.get("agent_model"),
                 "max_concurrency": selected.max_concurrency,
                 "stop_at_score": selected.stop_at_score,
                 "sandbox": selected.sandbox,

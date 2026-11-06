@@ -137,6 +137,12 @@ def use_resolved_endpoint(endpoint: EndpointConfiguration):
         _CALL_ENDPOINT.reset(token)
 
 
+def bound_call_endpoint() -> EndpointConfiguration | None:
+    """Return the public-API endpoint bound for this call, if any."""
+
+    return _CALL_ENDPOINT.get()
+
+
 def resolve_endpoint(
     *,
     base_url: str | None = None,
@@ -200,6 +206,7 @@ __all__ = [
     "EndpointPolicyError",
     "OFFICIAL_OPENAI_HOSTS",
     "redact_diagnostic",
+    "bound_call_endpoint",
     "chat_completions_url",
     "resolve_endpoint",
     "use_resolved_endpoint",

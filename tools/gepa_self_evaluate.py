@@ -169,6 +169,7 @@ def _report_data(result: CommandResult) -> tuple[dict[str, Any], str]:
 def _run_candidate_checks(
     fixture: Path,
     candidate_path: Path,
+    plugin_dir: Path,
     plugin_eval_command: list[str],
     check_timeout_seconds: float,
 ) -> dict[str, CommandResult]:
@@ -196,7 +197,7 @@ def _run_candidate_checks(
             [
                 *plugin_eval_command,
                 "analyze",
-                str(fixture),
+                str(plugin_dir),
                 "--format",
                 "json",
             ],
@@ -311,6 +312,7 @@ def evaluate_candidate(
         results = _run_candidate_checks(
             fixture,
             candidate_path,
+            staged_plugin,
             plugin_eval_command,
             check_timeout_seconds,
         )

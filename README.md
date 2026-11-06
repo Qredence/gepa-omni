@@ -54,8 +54,9 @@ required API is ahead of a published release:
 
 The package and lockfile require this exact upstream revision because the
 published 0.1.4 distribution does not expose the engine-pluggable
-`OptimizeAnythingConfig` surface used by the plugin. Refresh the revision
-intentionally when the API contract is revalidated:
+`OptimizeAnythingConfig` surface used by the plugin. To move to a newer GEPA,
+edit the commit SHA in the root `pyproject.toml` and in
+`packages/gepa-omni/pyproject.toml`, then refresh the lockfile:
 
 ```bash
 uv lock --upgrade-package gepa
@@ -238,10 +239,10 @@ uv run ruff format --check .
 git diff --check
 ```
 
-Validate the payload with the plugin tooling before distribution:
+Validate the payload with the plugin tooling before distribution. `PLUGIN_CREATOR` is the checkout of the plugin-creator skill that provides `scripts/validate_plugin.py`:
 
 ```bash
-python3 /Users/zocho/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/fleet-optimize
+python3 "$PLUGIN_CREATOR/scripts/validate_plugin.py" plugins/fleet-optimize
 ```
 
 Run the GEPA Omni preflight with the approved endpoint key in the current

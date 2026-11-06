@@ -86,9 +86,9 @@ def _check_chat_completions_config() -> bool:
         "set OPENAI_MODEL in the current process; the skill asks for it when missing",
     )
     check(
-        f"{key_name} is configured",
+        "approved endpoint API key is configured",
         key_configured,
-        f"configure {key_name} through the environment or a secret manager; do not provide it in chat",
+        "configure OPENAI_API_KEY for api.openai.com, or GEPA_OMNI_API_KEY or GEPA_OMNI_API_KEY_ENV otherwise, through the environment or a secret manager; do not provide it in chat",
     )
     valid_scheme = not base_url or base_url.startswith(("http://", "https://"))
     check(

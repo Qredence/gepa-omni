@@ -57,6 +57,8 @@ class SelfEvaluateTests(unittest.TestCase):
             env: dict[str, str] | None = None,
         ) -> self_evaluate_module.CommandResult:
             self.assertTrue((cwd / "packages" / "gepa-omni" / "src" / "gepa_omni" / "api.py").is_file())
+            if "analyze" in command:
+                self.assertEqual(Path(command[command.index("analyze") + 1]).name, "fleet-optimize")
             if "plugin-eval" in " ".join(command) or "node" in command:
                 return self_evaluate_module.CommandResult(tuple(command), 0, report, "")
             return self._result(command)

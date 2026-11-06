@@ -221,10 +221,10 @@ class GePAOmniPackageTests(unittest.TestCase):
                     output_dir=str(Path(temp_dir) / "outputs"),
                 ),
             )
+            self.assertEqual(os.environ.get("OPENAI_API_KEY"), "openai-secret")
 
         self.assertEqual(captured["active_key"], "provider-secret")
         self.assertEqual(captured["kwargs"]["config"].engine_config["reflection"]["reflection_lm"], "provider-model")
-        self.assertEqual(os.environ.get("OPENAI_API_KEY"), None)
         self.assertEqual(result.metadata["heldout_scores"], [1.0, 0.5])
         self.assertEqual(result.metadata["heldout_score"], 0.75)
         self.assertEqual(result.metadata["test_score"], 0.75)
