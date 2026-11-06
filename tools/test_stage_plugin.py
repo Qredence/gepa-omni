@@ -106,11 +106,11 @@ class StagePluginTests(unittest.TestCase):
         dirty_suffix = "\n# dirty-working-tree-marker\n"
         original_init = tracked_package.read_text(encoding="utf-8")
         original_skill = tracked_skill.read_text(encoding="utf-8")
-        tracked_package.write_text(original_init + dirty_suffix, encoding="utf-8")
-        tracked_skill.write_text(original_skill + dirty_suffix, encoding="utf-8")
-        marker.write_text("must not ship", encoding="utf-8")
-        untracked_package.write_text("must not ship", encoding="utf-8")
         try:
+            tracked_package.write_text(original_init + dirty_suffix, encoding="utf-8")
+            tracked_skill.write_text(original_skill + dirty_suffix, encoding="utf-8")
+            marker.write_text("must not ship", encoding="utf-8")
+            untracked_package.write_text("must not ship", encoding="utf-8")
             index_init = subprocess.run(
                 ["git", "-C", str(REPO_ROOT), "show", f":{package_repo_path}"],
                 capture_output=True,
