@@ -1,0 +1,49 @@
+packages/gepa-omni/README.md
+  s_059f79a4d069a5::t_9e99ecaf21685a 3-6
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/chat_completions.py
+  s_059f79a4d069a5::t_12693ba01baa76 52-62,64-82
+  s_059f79a4d069a5::t_ba0331e55ad93d 25
+  s_059f79a4d069a5::t_18f5cd03a0f263 63
+  s_059f79a4d069a5::t_4750918754481e 16,24,26-31
+  s_059f79a4d069a5::t_7db5d0e79812a1 132
+tests/test_gepa_omni_package.py
+  s_059f79a4d069a5::t_8d8dcd835d6f81 224
+tools/gepa_self_evaluate.py
+  s_059f79a4d069a5::t_bf938c183870ce 200
+  s_059f79a4d069a5::t_380002f0a46a80 315
+  s_059f79a4d069a5::t_f1c69baec116cd 172
+README.md
+  s_059f79a4d069a5::t_56b2c6a125ebc8 57-59
+  s_059f79a4d069a5::t_be886be2c88fb1 242
+  s_059f79a4d069a5::t_aabec1a0228927 245
+tools/test_gepa_self_evaluate.py
+  s_059f79a4d069a5::t_932d74108d8fed 60-61
+packages/gepa-omni/src/gepa_omni/security.py
+  s_059f79a4d069a5::t_b7e14ebd4ed22a 209
+  s_059f79a4d069a5::t_74b1ca63609d30 140-145
+tests/test_preflight.py
+  s_059f79a4d069a5::t_bcce44c4c7f85b 199-201
+packages/gepa-omni/src/gepa_omni/api.py
+  s_059f79a4d069a5::t_1fa681d00b9a2b 458
+  s_059f79a4d069a5::t_075dd965d40b07 277-284
+  s_059f79a4d069a5::t_2ac11b14a3c13b 218-220
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/preflight.py
+  s_059f79a4d069a5::t_7d289eb69d677d 89
+  s_059f79a4d069a5::t_ebeef28cce178b 91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "723b295d41e53b14403a3068d268e90a644a3217",
+  "prompts": {},
+  "sessions": {
+    "s_059f79a4d069a5": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "fa65a437-9eff-4265-9869-03277cc08000",
+        "model": "grok-4.7"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
