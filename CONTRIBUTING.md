@@ -14,11 +14,11 @@ uv run ruff format --check .
 git diff --check
 ```
 
-The development group follows the latest upstream GEPA implementation. The
-dependency is intentionally not a permanent exact-version pin: the
-project uses upstream Git while the parallel-proposal API is ahead of a
-published release, and `uv.lock` records the exact revision used by CI.
-Refresh it deliberately with:
+The development group pins upstream GEPA to an exact Git commit, because the
+parallel-proposal API is ahead of a published release. The same commit is set
+in the root `pyproject.toml` and in `packages/gepa-omni/pyproject.toml`, and
+`uv.lock` records the resolved revision used by CI. To move to a newer GEPA,
+edit the commit SHA in both files, then refresh the lockfile:
 
 ```bash
 uv lock --upgrade-package gepa
