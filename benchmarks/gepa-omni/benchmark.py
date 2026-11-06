@@ -90,7 +90,9 @@ def aggregate(runs: Iterable[BenchmarkRun]) -> dict[str, Any]:
                 "heldout_improvement_variance": (
                     statistics.pvariance(improvements) if len(improvements) > 1 else 0.0 if improvements else None
                 ),
-                "evaluations_median": _median_or_none(value.evaluations for value in values if value.evaluations is not None),
+                "evaluations_median": _median_or_none(
+                    value.evaluations for value in values if value.evaluations is not None
+                ),
                 "dollars_median": _median_or_none(value.dollars for value in values if value.dollars is not None),
                 "wall_clock_seconds_median": _median_or_none(
                     value.wall_clock_seconds for value in values if value.wall_clock_seconds is not None
@@ -150,10 +152,7 @@ def fixture_runner(engine: str, case: BenchmarkCase, seed: int) -> BenchmarkRun:
 def run_fixture(*, seeds: Iterable[int] = range(5)) -> dict[str, Any]:
     seed_values = tuple(seeds)
     runs = [
-        fixture_runner(engine, case, seed)
-        for case in benchmark_cases()
-        for engine in ENGINES
-        for seed in seed_values
+        fixture_runner(engine, case, seed) for case in benchmark_cases() for engine in ENGINES for seed in seed_values
     ]
     report = aggregate(runs)
     report["mode"] = "fixture"
