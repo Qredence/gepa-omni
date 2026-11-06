@@ -25,7 +25,7 @@ _FENCE_RE = re.compile(r"```(?:[A-Za-z0-9_+.-]*)?\s*\n(.*?)```", re.DOTALL)
 @dataclass
 class BestOfNConfig:
     model: str | None = None
-    agent_backend: str = "codex"
+    agent_backend: str | None = None
     runner_profile: str | None = None
     codex_command: str = "codex"
     pi_command: str = "pi"
@@ -41,9 +41,14 @@ class BestOfNConfig:
     stop_at_score: float | None = None
 
     def __post_init__(self) -> None:
-        if self.runner_profile is not None:
-            self.agent_backend = self.runner_profile
-        self.agent_backend = str(self.agent_backend).strip().lower()
+        backend = None if self.agent_backend is None else str(self.agent_backend).strip().lower()
+        profile = None if self.runner_profile is None else str(self.runner_profile).strip().lower()
+        if backend is not None and profile is not None and backend != profile:
+            raise ValueError(
+                f"best_of_n agent_backend {backend!r} conflicts with runner_profile {profile!r}; set only one"
+            )
+        selected = backend if backend is not None else profile
+        self.agent_backend = "codex" if selected is None else selected
         self.runner_profile = self.agent_backend
         if self.agent_backend not in {"codex", "pi", "claude"}:
             raise ValueError("best_of_n agent_backend must be one of: codex, pi, claude")
@@ -59,7 +64,7 @@ class BestOfNConfig:
 def _config(config: Any = None, **kwargs: Any) -> BestOfNConfig:
     values: dict[str, Any] = {
         "model": None,
-        "agent_backend": "codex",
+        "agent_backend": None,
         "codex_command": "codex",
         "pi_command": "pi",
         "claude_command": "claude",

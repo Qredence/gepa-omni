@@ -15,6 +15,8 @@ SCRIPT_DIR = (
 )
 sys.path.insert(0, str(SCRIPT_DIR))
 from native_omni import (  # noqa: E402
+    BestOfNConfig,
+    BestOfNEngine,
     BudgetExhausted,
     BudgetTracker,
     EvalServer,
@@ -221,3 +223,20 @@ class NativeCoreTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "requires both input/output pricing rates"):
             _validate_budget(1, 1.0)
+
+    def test_best_of_n_runner_profile_and_agent_backend_agree_or_raise(self) -> None:
+        self.assertEqual(BestOfNConfig().agent_backend, "codex")
+        self.assertEqual(BestOfNConfig(runner_profile="pi").agent_backend, "pi")
+        self.assertEqual(BestOfNConfig(agent_backend="claude").runner_profile, "claude")
+        self.assertEqual(BestOfNConfig(agent_backend="Pi", runner_profile=" pi ").agent_backend, "pi")
+        self.assertEqual(BestOfNEngine({"agent_backend": "pi"}).config.runner_profile, "pi")
+
+        with self.assertRaisesRegex(ValueError, "conflicts with runner_profile"):
+            BestOfNConfig(agent_backend="codex", runner_profile="pi")
+
+    def test_best_of_n_rebuild_rejects_conflicting_agent_backend(self) -> None:
+        config = BestOfNConfig(agent_backend="pi")
+
+        self.assertEqual(BestOfNEngine(config, agent_backend="pi").config.agent_backend, "pi")
+        with self.assertRaisesRegex(ValueError, "conflicts with runner_profile"):
+            BestOfNEngine(config, agent_backend="claude")
