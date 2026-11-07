@@ -259,8 +259,6 @@ def validate_pending_candidates(
             if unresolved_path.is_symlink() or not candidate_path.is_file():
                 raise ValueError(f"pending candidate {name!r} file does not exist as a regular file")
         candidate = candidate_path.read_text(encoding="utf-8")
-        if not isinstance(candidate, str):
-            raise ValueError(f"pending candidate {name!r} is not text")
         validated.append((name, candidate_path, candidate))
     return validated
 

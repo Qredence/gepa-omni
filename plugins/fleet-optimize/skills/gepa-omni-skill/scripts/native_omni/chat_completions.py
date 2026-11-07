@@ -29,6 +29,7 @@ from gepa_omni.security import (
     redact_diagnostic,
     resolve_endpoint,
 )
+from gepa_omni.transport import pinned_urlopen
 
 
 class ChatCompletionError(RuntimeError):
@@ -143,8 +144,6 @@ class OpenAIChatCompletionsClient:
         )
         if (self.input_cost_per_million is None) != (self.output_cost_per_million is None):
             raise ValueError("input/output pricing must be supplied together")
-        from gepa_omni.transport import pinned_urlopen
-
         self._opener = opener or pinned_urlopen(endpoint)
 
     @property

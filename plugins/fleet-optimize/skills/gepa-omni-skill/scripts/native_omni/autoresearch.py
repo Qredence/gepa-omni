@@ -109,7 +109,7 @@ def _candidate_from_file(path: Path, fallback: str) -> str:
         value = path.read_text(encoding="utf-8")
     except (FileNotFoundError, OSError):
         return fallback
-    return value if isinstance(value, str) else fallback
+    return value
 
 
 def _materialize_workspace(
@@ -132,10 +132,8 @@ def _materialize_workspace(
         f"`{work_dir / 'best_candidate.txt'}`. Return the complete improved candidate "
         "in one fenced code block; the host will persist it. The model receives the "
         "workspace files in the prompt and has no local filesystem or shell tools.\n\n"
-        f"## Evaluation\nThis is a {eval_mode} optimization. Run `{work_dir / 'eval.sh'} "
-        f"{work_dir / 'candidate.txt'}` after each meaningful change. The host runs this "
-        "evaluation after each returned candidate; do not attempt local commands.\n\n"
-        "Keep or discard each experiment based on the returned score. Do not edit eval.sh.\n\n"
+        f"## Evaluation\nThis is a {eval_mode} optimization. The host scores each "
+        "returned candidate. Do not attempt local commands.\n\n"
         "## Budget\n" + "\n".join(budget_lines) + "\n"
     )
     (work_dir / "program.md").write_text(program, encoding="utf-8")
@@ -304,12 +302,6 @@ class AutoResearchEngine:
                     candidate_path.write_text(response_candidate, encoding="utf-8")
                 if not candidate:
                     candidate = _candidate_from_file(work_dir / "candidate.txt", task.seed_candidate)
-                if not isinstance(candidate, str):
-                    candidate = task.seed_candidate
-
-                # An agent normally calls eval.sh itself.  A mocked/minimal
-                # runner may only write the candidate; score it once so the
-                # native engine still has a deterministic acceptance boundary.
                 if server.budget.used == before_evals and not server.budget.exhausted:
                     try:
                         score, info = score_candidate(server, candidate)

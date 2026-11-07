@@ -234,13 +234,13 @@ def _check_chat_pricing(args: argparse.Namespace) -> None:
         )
 
 
-def _check_agent_runtime(args: argparse.Namespace, engine: str) -> None:
+def _check_agent_runtime(args: argparse.Namespace) -> None:
     _check_chat_completions_config()
     _check_native_runner(args.runner_profile)
     _check_chat_pricing(args)
 
 
-def _check_codex_proposer_runtime(args: argparse.Namespace, engine: str) -> None:
+def _check_codex_proposer_runtime(args: argparse.Namespace) -> None:
     _check_chat_completions_config()
     check("CodexAgentProposer uses the shared Chat Completions endpoint", True)
     _check_chat_pricing(args)
@@ -306,18 +306,18 @@ def main(argv: list[str] | None = None) -> int:
         gepa_ok = _check_gepa_surface()
         if args.engine == "codex":
             _check_codex_proposer_surface()
-            _check_codex_proposer_runtime(args, args.engine)
+            _check_codex_proposer_runtime(args)
         if args.engine == "gepa" and gepa_ok:
             _check_codex_proposer_surface()
-            _check_codex_proposer_runtime(args, args.engine)
+            _check_codex_proposer_runtime(args)
 
     if args.engine in NATIVE_ENGINES:
         _native_surface(args.engine)
-        _check_agent_runtime(args, args.engine)
+        _check_agent_runtime(args)
 
     if args.engine == "omni":
         _native_surface("omni")
-        _check_agent_runtime(args, "omni")
+        _check_agent_runtime(args)
         _check_codex_proposer_surface()
 
     if args.test_lm:

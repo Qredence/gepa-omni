@@ -8,6 +8,7 @@ from threading import local
 import urllib.error
 import urllib.request
 from typing import Any
+from urllib.parse import urlsplit
 
 from .security import EndpointConfiguration
 
@@ -56,8 +57,6 @@ def pinned_urlopen(endpoint: EndpointConfiguration):
     )
 
     def open_request(request, timeout=600, *, read_timeout=600):
-        from urllib.parse import urlsplit
-
         endpoint_url = urlsplit(endpoint.base_url)
         request_url = urlsplit(request.full_url)
         if request_url.scheme != endpoint_url.scheme or request_url.netloc != endpoint_url.netloc:

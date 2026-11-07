@@ -17,6 +17,7 @@ from typing import Any
 from .allocation import plan_auto_allocation
 from .config import OmniConfig
 from .security import EndpointConfiguration, resolve_endpoint, use_resolved_endpoint
+from .transport import pinned_openai_client
 
 
 _ENDPOINT_LOCK = RLock()
@@ -213,8 +214,6 @@ def _standalone_engine(
     run_root = _validate_external_path(config.run_dir, label="run_dir")
     output_root = _validate_external_path(config.output_dir, label="output_dir")
     engine_config: dict[str, Any] = {}
-    from .transport import pinned_openai_client
-
     if engine in {"autoresearch", "meta_harness"}:
         raise ValueError(
             "standalone external agent runners cannot enforce endpoint pinning; use the plugin native runtime"
@@ -244,26 +243,6 @@ def _standalone_engine(
         if score_heldout:
             result.metadata.update(_heldout_metadata(result.best_candidate, task))
     return result
-
-
-def _standalone_gepa(
-    seed_candidate: str,
-    *,
-    task: Mapping[str, Any],
-    config: OmniConfig,
-    base_url: str | None,
-    api_key: str | None,
-    api_key_env: str | None,
-) -> OptimizationResult:
-    return _standalone_engine(
-        seed_candidate,
-        task=task,
-        config=config,
-        engine="gepa",
-        base_url=base_url,
-        api_key=api_key,
-        api_key_env=api_key_env,
-    )
 
 
 def _selection_size(task: Mapping[str, Any]) -> int:

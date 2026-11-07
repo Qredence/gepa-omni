@@ -1,7 +1,6 @@
 """Stdlib-only runtime primitives for the plugin-native Omni engines.
 
 This package intentionally does not depend on the installed ``gepa`` package.
-The optimization engines compose these primitives in a later integration step.
 """
 
 from .core import (
