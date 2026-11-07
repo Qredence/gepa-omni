@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import os
+import socket
+from urllib.parse import urlsplit
 import sys
 from pathlib import Path
 
@@ -36,6 +38,17 @@ def main(argv: list[str] | None = None) -> int:
     missing = [name for name, configured in report["provider"].items() if not configured]  # type: ignore[union-attr]
     if missing:
         problems.append("missing provider variables: " + ", ".join(missing))
+
+    if os.environ.get("OPENAI_BASE_URL", "").strip():
+        try:
+            parsed = urlsplit(os.environ["OPENAI_BASE_URL"])
+            port = parsed.port
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+                raise ValueError("invalid endpoint")
+            if not socket.getaddrinfo(parsed.hostname, port or (443 if parsed.scheme == "https" else 80)):
+                raise ValueError("no endpoint addresses")
+        except (ValueError, OSError, UnicodeError):
+            problems.append("OPENAI_BASE_URL must be a valid, resolvable HTTP(S) endpoint")
 
     print(json.dumps({"ok": not problems, **report, "problems": problems}, indent=2, sort_keys=True))
     return 1 if problems else 0

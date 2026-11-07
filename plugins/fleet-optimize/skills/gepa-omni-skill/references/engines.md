@@ -19,3 +19,8 @@ the selected continuation engine.
 `best_of_n` is the independent comparison floor: it samples candidates without
 using feedback history. Use it for baselines, not as a replacement for a
 feedback-rich evaluator.
+
+Clean-package automatic runs pilot GEPA and Best-of-N using pinned endpoint
+transports. Standalone upstream AutoResearch and MetaHarness launch external
+agent processes that cannot enforce this endpoint policy, so they fail before
+launch; install the plugin to use their native Chat Completions implementations.

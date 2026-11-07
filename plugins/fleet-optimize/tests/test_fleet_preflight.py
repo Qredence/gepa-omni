@@ -31,7 +31,7 @@ def _set_provider_environment(monkeypatch: pytest.MonkeyPatch, *, omit: tuple[st
         if name in omit:
             monkeypatch.delenv(name, raising=False)
         else:
-            monkeypatch.setenv(name, "configured")
+            monkeypatch.setenv(name, "https://api.openai.com/v1" if name == "OPENAI_BASE_URL" else "configured")
 
 
 def test_preflight_passes_with_compatible_gepa_and_provider(
@@ -81,3 +81,12 @@ def test_preflight_reports_incompatible_gepa(
     assert report["ok"] is False
     assert report["gepa"] == {"compatible": False, "error": "upstream GEPA is too old"}
     assert report["problems"] == ["upstream GEPA is too old"]
+
+
+@pytest.mark.parametrize("url", ["https://[::1", "https://example.com:bad", "no-scheme", "https:///missing"])
+def test_preflight_reports_invalid_url(preflight, monkeypatch, capsys, url):
+    _set_provider_environment(monkeypatch)
+    monkeypatch.setenv("OPENAI_BASE_URL", url)
+    with patch.object(preflight, "describe_compatibility", return_value={"compatible": True}):
+        assert preflight.main([]) == 1
+    assert "resolvable HTTP(S)" in capsys.readouterr().out

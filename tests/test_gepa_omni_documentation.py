@@ -6,7 +6,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, create_autospec
 
 
 SKILL = (
@@ -30,18 +30,17 @@ class DocumentationSnippetTests(unittest.TestCase):
 
         fake_gepa_omni = types.ModuleType("gepa_omni")
 
-        class FakeConfig:
-            def __init__(self, **kwargs: object) -> None:
-                self.kwargs = kwargs
+        from gepa_omni import OmniConfig, optimize
+        from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
 
-        fake_gepa_omni.OmniConfig = FakeConfig
-        fake_gepa_omni.optimize = lambda **_kwargs: object()
+        fake_gepa_omni.OmniConfig = create_autospec(OmniConfig)
+        fake_gepa_omni.optimize = create_autospec(optimize)
 
         fake_optimize_module = types.ModuleType("gepa.optimize_anything")
-        fake_optimize_module.EngineConfig = FakeConfig
-        fake_optimize_module.GEPAConfig = FakeConfig
-        fake_optimize_module.ReflectionConfig = FakeConfig
-        fake_optimize_module.optimize_anything = lambda **_kwargs: object()
+        fake_optimize_module.EngineConfig = create_autospec(EngineConfig)
+        fake_optimize_module.GEPAConfig = create_autospec(GEPAConfig)
+        fake_optimize_module.ReflectionConfig = create_autospec(ReflectionConfig)
+        fake_optimize_module.optimize_anything = create_autospec(optimize_anything)
         fake_gepa = types.ModuleType("gepa")
         fake_gepa.__path__ = []  # type: ignore[attr-defined]
 
@@ -51,17 +50,13 @@ class DocumentationSnippetTests(unittest.TestCase):
             "train": ["train"],
             "validation": ["validation"],
             "test": ["test"],
-            "model": "model",
-            "SEED": "seed",
-            "trainset": ["train"],
-            "valset": ["validation"],
         }
         modules = {
             "gepa_omni": fake_gepa_omni,
             "gepa": fake_gepa,
             "gepa.optimize_anything": fake_optimize_module,
         }
-        with patch.dict(sys.modules, modules):
+        with patch.dict(sys.modules, modules), patch.dict("os.environ", {"OPENAI_MODEL": "model"}):
             for index, source in enumerate(blocks, start=1):
                 tree = ast.parse(source, filename=f"SKILL.md:block-{index}")
                 compiled = compile(tree, f"SKILL.md:block-{index}", "exec")

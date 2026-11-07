@@ -445,7 +445,7 @@ class EvalServer:
         if remaining == 0:
             raise BudgetExhausted(f"Eval budget exhausted: {self.budget.used}/{self.budget.max_evals} used")
         if remaining is not None and len(examples) > remaining:
-            examples = examples[:remaining]
+            raise BudgetExhausted(f"Eval budget exhausted: {self.budget.used}/{self.budget.max_evals} used")
         results = self.evaluate_pairs(
             [(candidate, example) for _, example in examples], example_ids=[key for key, _ in examples]
         )

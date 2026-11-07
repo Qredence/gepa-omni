@@ -19,7 +19,7 @@ class GePAOmniPackageTests(unittest.TestCase):
         self.assertEqual(OmniConfig(max_evals=10).strategy, "auto")
 
     def test_auto_allocation_falls_back_for_small_budgets(self) -> None:
-        plan = plan_auto_allocation(4, None)
+        plan = plan_auto_allocation(4, None, baseline_evals=1)
         self.assertEqual(plan.fallback_engine, "gepa")
         self.assertEqual(plan.continuation_evals, 4)
 
@@ -100,12 +100,14 @@ class GePAOmniPackageTests(unittest.TestCase):
                 base_url="http://provider.example/v1",
                 model="model",
                 api_key="key",
+                environ={},
             )
         with self.assertRaisesRegex(EndpointPolicyError, "embedded credentials"):
             resolve_endpoint(
                 base_url="https://user:password@provider.example/v1",
                 model="model",
                 api_key="key",
+                environ={},
             )
 
     def test_private_endpoint_requires_explicit_opt_in(self) -> None:
@@ -114,6 +116,7 @@ class GePAOmniPackageTests(unittest.TestCase):
                 base_url="https://192.168.1.10/v1",
                 model="model",
                 api_key="key",
+                environ={},
             )
         endpoint = resolve_endpoint(
             base_url="https://192.168.1.10/v1",
@@ -146,6 +149,20 @@ class GePAOmniPackageTests(unittest.TestCase):
                     model="model",
                     api_key="key",
                 )
+
+    def test_result_rejects_nonfinite_scores(self) -> None:
+        for score in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(score=score), self.assertRaisesRegex(ValueError, "finite"):
+                _result(SimpleNamespace(best_candidate="seed", best_score=score, total_evals=1), strategy="gepa")
+
+    def test_endpoint_credentials_are_hidden_from_repr(self) -> None:
+        endpoint = resolve_endpoint(base_url="http://localhost/v1", model="model", api_key="sensitive-key", environ={})
+        self.assertNotIn("sensitive-key", repr(endpoint))
+
+    def test_invalid_endpoint_ports_fail_policy(self) -> None:
+        for url in ("https://example.com:bad", "https://example.com:99999", "https://[::1"):
+            with self.subTest(url=url), self.assertRaises(EndpointPolicyError):
+                resolve_endpoint(base_url=url, model="model", api_key="key", environ={})
 
     def test_result_without_score_raises(self) -> None:
         with self.assertRaisesRegex(ValueError, "did not include a score"):
@@ -315,10 +332,10 @@ class GePAOmniPackageTests(unittest.TestCase):
                 ),
             )
 
-        self.assertEqual(optimize_anything.call_count, 4)
-        self.assertEqual(result.metadata["auto"]["pilot_engines"], ["gepa", "autoresearch", "meta_harness"])
+        self.assertEqual(optimize_anything.call_count, 3)
+        self.assertEqual(result.metadata["auto"]["pilot_engines"], ["gepa", "best_of_n"])
         self.assertEqual(result.metadata["auto"]["continuation_engine"], "gepa")
-        self.assertEqual(result.total_evals, 8)
+        self.assertEqual(result.total_evals, 7)
 
     def test_explicit_gepa_strategy_selects_the_standalone_engine(self) -> None:
         class FakeRaw:
@@ -388,3 +405,148 @@ class GePAOmniPackageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_auto_allocation_full_splits_and_many_engines():
+    for size in (1, 6, 20):
+        for count in (2, 3, 11, 25):
+            plan = plan_auto_allocation(1000, 20, engines=tuple(str(i) for i in range(count)), selection_pool_size=size, baseline_evals=size)
+            assert plan.pilot_evals >= size
+            assert plan.continuation_evals >= size
+            assert size + count * plan.pilot_evals + plan.continuation_evals == 1000
+            assert count * plan.pilot_token_cost <= 10
+            assert plan.continuation_token_cost >= 10
+    assert plan_auto_allocation(100, 0.1).fallback_engine == "gepa"
+
+
+def test_seed_score_uses_full_split_and_batch():
+    from gepa_omni.api import _seed_score
+    import pytest
+
+    assert _seed_score("seed", {"evaluator": lambda _, x: x, "valset": [0, 1, 2]}) == 1
+    assert _seed_score("seed", {"batch_evaluator": lambda pairs: [x for _, x in pairs], "valset": [0, 2]}) == 1
+    assert _seed_score("seed", {"evaluator": lambda _: 0.25}) == 0.25
+    with pytest.raises(ValueError, match="one score"):
+        _seed_score("seed", {"batch_evaluator": lambda _: [], "valset": [1]})
+
+
+def test_endpoint_bound_model_and_json_redaction():
+    from gepa_omni.security import use_resolved_endpoint, redact_diagnostic
+    import pytest
+
+    endpoint = resolve_endpoint(base_url="http://localhost/v1", model="model", api_key="key", environ={})
+    with use_resolved_endpoint(endpoint), pytest.raises(EndpointPolicyError):
+        resolve_endpoint(model="")
+    for text in ('{"api_key": "sensitive"}', "token=sensitive", "password: 'sensitive'"):
+        assert "sensitive" not in redact_diagnostic(text)
+    with pytest.raises(EndpointPolicyError):
+        resolve_endpoint(base_url="https://100.100.100.200", model="model", api_key="key", environ={})
+
+
+def test_unknown_standalone_options_fail_before_provider_call():
+    import pytest
+    with patch("gepa_omni.api._legacy_runner", return_value=None), pytest.raises(TypeError, match="typo"):
+        optimize("seed", evaluator=lambda _: 1, config=OmniConfig(max_evals=1), typo=True)
+
+
+def test_endpoint_environment_calls_serialize_and_restore(tmp_path):
+    import threading
+    entered, second_started, release = (threading.Event() for _ in range(3))
+    values, errors = [], []
+
+    def upstream(seed, **kwargs):
+        if seed == "first":
+            entered.set()
+            assert release.wait(5)
+        values.append((os.environ["OPENAI_MODEL"], os.environ["OPENAI_API_KEY"]))
+        if seed == "second":
+            raise ValueError("expected")
+        return SimpleNamespace(best_candidate="winner", best_score=1.0, total_evals=1, metadata={})
+
+    def call(name):
+        if name == "second":
+            second_started.set()
+        try:
+            optimize(name, evaluator=lambda _: 1.0, engine="gepa", api_key=name,
+                     config=OmniConfig(max_evals=1, model=name, base_url="http://localhost/v1",
+                                       run_dir=str(tmp_path / name / "run"), output_dir=str(tmp_path / name / "out")))
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    with patch.dict(os.environ, {}, clear=True), patch("gepa_omni.api._legacy_runner", return_value=None), patch("gepa.optimize_anything.optimize_anything", side_effect=upstream):
+        before = dict(os.environ)
+        first, other = (threading.Thread(target=call, args=(name,)) for name in ("first", "second"))
+        first.start()
+        try:
+            assert entered.wait(5)
+            other.start()
+            assert second_started.wait(5)
+            assert values == []
+        finally:
+            release.set()
+            first.join(5)
+            other.join(5)
+        assert not first.is_alive() and not other.is_alive()
+        assert values == [("first", "first"), ("second", "second")]
+        assert errors == ["expected"]
+        assert dict(os.environ) == before
+
+
+def test_pinned_transports_keep_original_tls_hostname_and_numeric_peer():
+    import io
+    import urllib.request
+    import httpx
+    from gepa_omni.security import EndpointConfiguration
+    from gepa_omni.transport import pinned_urlopen, pinned_openai_client
+    from unittest.mock import MagicMock
+
+    endpoint = EndpointConfiguration("https://provider.example/v1", "model", "key", "explicit", ("8.8.8.8",))
+    peers = []
+    names = []
+    wire = b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}'
+    def connect(address, *args):
+        peers.append(address)
+        sock = MagicMock()
+        sock.makefile.return_value = io.BytesIO(wire)
+        return sock
+    def tls(sock, *, server_hostname):
+        names.append(server_hostname)
+        return sock
+    with patch("socket.create_connection", side_effect=connect), patch("ssl.SSLContext.wrap_socket", side_effect=tls), patch("socket.getaddrinfo", side_effect=AssertionError("DNS must not be repeated")):
+        with pinned_urlopen(endpoint)(urllib.request.Request(endpoint.endpoint)) as response:
+            assert response.read() == b"{}"
+        with pinned_openai_client(endpoint) as client:
+            response = client._client.send(httpx.Request("POST", endpoint.endpoint, content=b"{}"))
+            assert response.status_code == 200
+    assert peers == [("8.8.8.8", 443), ("8.8.8.8", 443)]
+    assert names == ["provider.example", "provider.example"]
+
+
+def test_auto_preserves_pilot_best_and_explicit_continuation(tmp_path):
+    from gepa_omni.api import _standalone_auto
+    heldout = []
+    calls = []
+    def run(seed, *, engine, config, **kwargs):
+        calls.append((engine, seed, config.max_evals))
+        score = {"gepa": 0.9, "best_of_n": 0.7}[engine] if len(calls) < 3 else 0.1
+        return OptimizationResult(f"candidate-{score}", score, 2, {})
+    task = {"valset": [0, 1], "test_set": ["heldout"], "evaluator": lambda candidate, example: heldout.append(candidate) or 0.5 if example == "heldout" else float(example)}
+    with patch("gepa_omni.api._standalone_engine", side_effect=run):
+        result = _standalone_auto("seed", task=task, config=OmniConfig(max_evals=40, model="model", continuation_engine="gepa", run_dir=str(tmp_path / "run"), output_dir=str(tmp_path / "out")), base_url="http://localhost/v1", api_key="key", api_key_env=None)
+    assert result.best_candidate == "candidate-0.9"
+    assert result.best_score == 0.9
+    assert result.total_evals == 8
+    assert calls[-1][0] == "gepa"
+    assert heldout == ["candidate-0.9"]
+
+
+def test_backend_aliases_do_not_override_replacement():
+    from dataclasses import replace
+    from native_omni.autoresearch import AutoResearchConfig
+    from native_omni.best_of_n import BestOfNConfig
+    from native_omni.meta_harness import MetaHarnessConfig
+    import pytest
+    for cls in (AutoResearchConfig, BestOfNConfig, MetaHarnessConfig):
+        assert replace(cls(agent_backend="pi"), agent_backend="claude").agent_backend == "claude"
+        with pytest.raises(ValueError, match="conflicts"):
+            cls(agent_backend="pi", runner_profile="codex")

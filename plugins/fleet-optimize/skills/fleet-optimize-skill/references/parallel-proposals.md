@@ -7,8 +7,7 @@ so one iteration has `P * N` proposal tasks.
 
 ## Evaluation tiers
 
-1. `parallel=False` is the deterministic option for evaluators with shared
-   mutable state or limited resources.
+1. For shared mutable state, use `build_config(max_concurrency=1, engine_config={"parallel": False})`. The engine worker flag alone does not serialize the shared evaluation server.
 2. `parallel=True` uses upstream GEPA's worker pool for singleton evaluations.
 3. `batch_evaluator` receives the pending pairs as one grouped call and is the
    right seam for provider batch APIs or external schedulers.

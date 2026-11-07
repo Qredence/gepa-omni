@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
+from functools import wraps
+from threading import RLock
 from dataclasses import dataclass, fields, replace
 import math
 import os
@@ -15,6 +17,18 @@ from typing import Any
 from .allocation import plan_auto_allocation
 from .config import OmniConfig
 from .security import EndpointConfiguration, resolve_endpoint, use_resolved_endpoint
+
+
+_ENDPOINT_LOCK = RLock()
+
+
+def _serialize_endpoint_call(fn):
+    @wraps(fn)
+    def call(*args, **kwargs):
+        with _ENDPOINT_LOCK:
+            return fn(*args, **kwargs)
+
+    return call
 
 
 @dataclass
@@ -73,7 +87,10 @@ def _result(raw: Any, *, strategy: str, engine: str | None = None) -> Optimizati
     metadata.update({"strategy": strategy})
     if engine is not None:
         metadata.setdefault("engine", engine)
-    return OptimizationResult(candidate, float(score), int(evals), metadata, raw)
+    best_score = float(score)
+    if not math.isfinite(best_score):
+        raise ValueError("optimization result score must be finite")
+    return OptimizationResult(candidate, best_score, int(evals), metadata, raw)
 
 
 def _legacy_runner() -> Any | None:
@@ -196,10 +213,18 @@ def _standalone_engine(
     run_root = _validate_external_path(config.run_dir, label="run_dir")
     output_root = _validate_external_path(config.output_dir, label="output_dir")
     engine_config: dict[str, Any] = {}
+    from .transport import pinned_openai_client
+
+    if engine in {"autoresearch", "meta_harness"}:
+        raise ValueError(
+            "standalone external agent runners cannot enforce endpoint pinning; use the plugin native runtime"
+        )
+    client = pinned_openai_client(endpoint)
     if engine == "gepa":
-        engine_config["reflection"] = {"reflection_lm": endpoint.model}
-    elif config.model is not None:
-        engine_config["model"] = config.model
+        engine_config["reflection"] = {"reflection_lm": endpoint.model, "reflection_lm_kwargs": {"client": client}}
+    else:
+        engine_config["model"] = endpoint.model
+        engine_config["lm_kwargs"] = {"client": client}
     gepa_config = OptimizeAnythingConfig(
         engine=engine,
         max_evals=config.max_evals,
@@ -213,7 +238,7 @@ def _standalone_engine(
     )
     kwargs = dict(task)
     kwargs.pop("test_set", None)
-    with _endpoint_environment(endpoint):
+    with client, _endpoint_environment(endpoint):
         raw = optimize_anything(seed_candidate, config=gepa_config, **kwargs)
         result = _result(raw, strategy=config.strategy, engine=engine)
         if score_heldout:
@@ -241,15 +266,24 @@ def _standalone_gepa(
     )
 
 
-def _seed_score(seed_candidate: str, task: Mapping[str, Any]) -> float | None:
-    evaluator = task.get("evaluator")
-    examples = task.get("valset") or task.get("dataset")
-    if not callable(evaluator) or not examples:
-        return None
-    try:
-        return _score_value(evaluator(seed_candidate, list(examples)[0]))
-    except Exception:  # noqa: BLE001 - seed scoring is advisory for allocation
-        return None
+def _selection_size(task: Mapping[str, Any]) -> int:
+    return len(task.get("valset") or task.get("dataset") or [None])
+
+
+def _seed_score(seed_candidate: str, task: Mapping[str, Any]) -> float:
+    examples = list(task.get("valset") or task.get("dataset") or [None])
+    batch = task.get("batch_evaluator")
+    if callable(batch):
+        scores = [_score_value(value) for value in batch([(seed_candidate, example) for example in examples])]
+        if len(scores) != len(examples):
+            raise ValueError("batch_evaluator must return one score per selection example")
+    else:
+        evaluator = task["evaluator"]
+        scores = [
+            _score_value(evaluator(seed_candidate) if example is None else evaluator(seed_candidate, example))
+            for example in examples
+        ]
+    return sum(scores) / len(scores)
 
 
 def _standalone_auto(
@@ -261,7 +295,14 @@ def _standalone_auto(
     api_key: str | None,
     api_key_env: str | None,
 ) -> OptimizationResult:
-    plan = plan_auto_allocation(config.max_evals, config.max_token_cost)
+    baseline_evals = _selection_size(task)
+    plan = plan_auto_allocation(
+        config.max_evals,
+        config.max_token_cost,
+        selection_pool_size=baseline_evals,
+        baseline_evals=baseline_evals,
+        engines=("gepa", "best_of_n"),
+    )
     if plan.fallback_engine is not None:
         fallback = replace(config, strategy=plan.fallback_engine)
         return _standalone_engine(
@@ -311,13 +352,15 @@ def _standalone_auto(
 
     def rank(item: tuple[str, OptimizationResult]) -> float:
         _engine, result = item
-        if result.metadata.get("scored") is False:
+        if result.metadata.get("scored") is False or result.total_evals <= 0 or not math.isfinite(result.best_score):
             return float("-inf")
         improvement = result.best_score - seed_score if seed_score is not None else result.best_score
         return improvement / max(1, result.total_evals)
 
     winning_engine, winning_result = max(pilots, key=rank)
-    continuation = config.continuation_engine if config.continuation_engine != "gepa" else winning_engine
+    if rank((winning_engine, winning_result)) == float("-inf"):
+        raise ValueError("no auto pilot produced a measured finite score")
+    continuation = config.continuation_engine or winning_engine
     continuation_config = replace(
         config,
         max_evals=plan.continuation_evals,
@@ -333,9 +376,14 @@ def _standalone_auto(
         base_url=base_url,
         api_key=api_key,
         api_key_env=api_key_env,
+        score_heldout=False,
     )
+    if winning_result.best_score > result.best_score:
+        result.best_candidate = winning_result.best_candidate
+        result.best_score = winning_result.best_score
+    result.metadata.update(_heldout_metadata(result.best_candidate, task))
     pilot_evals = sum(pilot.total_evals for _engine, pilot in pilots)
-    result.total_evals += pilot_evals
+    result.total_evals += pilot_evals + baseline_evals
     result.metadata["auto"] = {
         "pilot_engines": list(plan.engines),
         "pilot_engine": winning_engine,
@@ -366,6 +414,7 @@ def _call_plugin_runner(
         return runner(seed_candidate, **options)
 
 
+@_serialize_endpoint_call
 def run_optimization(
     seed_candidate: str,
     *,
@@ -474,6 +523,8 @@ def run_optimization(
             api_key_env=api_key_env,
         )
         return _result(raw, strategy=selected.strategy, engine=selected_engine)
+    if legacy_options:
+        raise TypeError("unexpected standalone options: " + ", ".join(sorted(legacy_options)))
     if selected.strategy == "omni":
         raise RuntimeError("strategy='omni' requires the GEPA Omni plugin runtime; install the plugin adapter")
     if selected.strategy == "auto" and selected_engine is None:

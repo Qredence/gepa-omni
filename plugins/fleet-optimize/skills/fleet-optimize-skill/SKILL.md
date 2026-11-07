@@ -34,7 +34,7 @@ uv pip install "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@8a2bed96385
 Before a real run, use the non-interactive preflight:
 
 ```bash
-python3 skills/fleet-optimize-skill/scripts/preflight.py
+uv run python "$PLUGIN_ROOT/skills/fleet-optimize-skill/scripts/preflight.py"
 ```
 
 The preflight checks the installed upstream surface and the process-scoped
@@ -71,6 +71,12 @@ examples must not be used to select proposals.
 ## Default parallel workflow
 
 The plugin helper defaults to two parents and two mutations per parent:
+
+Set `PLUGIN_ROOT` to the installed plugin directory, then expose the helper:
+
+```bash
+export PYTHONPATH="$PLUGIN_ROOT/skills/fleet-optimize-skill/scripts${PYTHONPATH:+:$PYTHONPATH}"
+```
 
 ```python
 import os
@@ -168,8 +174,9 @@ same order. If the function accepts `opt_states`, upstream GEPA may provide
 aligned warm-start state. Return diagnostics in `info`; grouped evaluation
 does not provide per-call stdout capture.
 
-Use ordinary `evaluator` instead when the evaluator is not thread-safe, needs
-per-call logging, or cannot express grouped execution.
+Use ordinary `evaluator` for per-call logging or execution that cannot be grouped.
+For shared mutable state, also set `max_concurrency=1` and
+`engine_config={"parallel": False}`; singleton calls alone do not serialize evaluation.
 
 ## External artifacts and safety
 
@@ -184,3 +191,7 @@ reflection model local shell or filesystem access as part of this plugin.
 
 See `references/api.md` for the launcher surface and
 `references/parallel-proposals.md` for strategy, batching, and budget details.
+
+For evaluators with shared mutable state, use
+`build_config(max_concurrency=1, engine_config={"parallel": False})`.
+Singleton `evaluator` calls can otherwise run concurrently.

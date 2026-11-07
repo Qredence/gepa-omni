@@ -166,7 +166,7 @@ class PreflightTests(unittest.TestCase):
             result = preflight.main(["--engine", "meta_harness", "--agent-backend", "claude"])
 
         self.assertEqual(result, 1)
-        self.assertIn("uses HTTP(S)", output.getvalue())
+        self.assertIn("absolute http:// or https://", output.getvalue())
 
     def test_native_backends_share_one_runner_and_do_not_probe_cli_tools(self) -> None:
         self._configure_api()
@@ -236,3 +236,15 @@ class PreflightTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_preflight_endpoint_resolver_parity():
+    cases = (
+        {"OPENAI_BASE_URL": "HTTPS://api.openai.com/v1", "OPENAI_MODEL": "model", "GEPA_OMNI_API_KEY_ENV": "PROVIDER_KEY", "PROVIDER_KEY": "secret"},
+        {"OPENAI_BASE_URL": "https://provider.example/v1", "OPENAI_MODEL": "model", "GEPA_OMNI_API_KEY_ENV": "MISSING", "GEPA_OMNI_API_KEY": "secret"},
+    )
+    for env in cases:
+        with patch.dict(os.environ, env, clear=True), redirect_stdout(io.StringIO()):
+            assert preflight._check_chat_completions_config()
+    with patch.dict(os.environ, {"OPENAI_BASE_URL": "https://[::1", "OPENAI_MODEL": "model"}, clear=True), redirect_stdout(io.StringIO()):
+        assert not preflight._check_chat_completions_config()

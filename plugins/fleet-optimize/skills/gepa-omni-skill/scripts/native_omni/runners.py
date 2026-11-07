@@ -158,6 +158,9 @@ class OpenAIChatCompletionRunner:
         ):
             raise ValueError("Chat Completions max_token_cost requires both input/output pricing rates")
         directory = _external_work_dir(work_dir)
+        retain_raw = _retain_raw_responses()
+        if not retain_raw:
+            (directory / "chat_completion_response.json").unlink(missing_ok=True)
         requested_session = session_id or self._session_id or str(uuid.uuid4())
         if self._session_id is not None and session_id is not None and session_id != self._session_id:
             self._messages = []
@@ -186,7 +189,7 @@ class OpenAIChatCompletionRunner:
             if spent_token_cost + response.cost_usd > max_token_cost:
                 raise TokenBudgetExceeded("Chat Completions token cost exceeded max_token_cost")
 
-        if _retain_raw_responses():
+        if retain_raw:
             response_json = json.dumps(response.response, ensure_ascii=False, indent=2, default=str) + "\n"
             (directory / "chat_completion_response.json").write_text(response_json, encoding="utf-8")
             stdout = json.dumps(response.response, ensure_ascii=False)
@@ -207,7 +210,7 @@ class OpenAIChatCompletionRunner:
                 "runner_profile": self.backend,
                 "model": self.client.model,
                 "session_mode": "chat_history",
-                "raw_response_retained": _retain_raw_responses(),
+                "raw_response_retained": retain_raw,
             },
         )
 

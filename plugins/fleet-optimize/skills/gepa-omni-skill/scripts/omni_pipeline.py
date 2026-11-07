@@ -36,10 +36,12 @@ class OmniBudgetError(ValueError):
     """Raised when a total budget cannot support four Omni phases."""
 
 
-def _resolve_runner_profile(runner_profile: str, agent_backend: str | None) -> str:
+def _resolve_runner_profile(runner_profile: str | None, agent_backend: str | None) -> str:
     """Resolve the renamed profile field while accepting one legacy alias."""
 
-    selected = agent_backend if agent_backend is not None else runner_profile
+    if runner_profile not in {None, "default"} and agent_backend is not None and runner_profile != agent_backend:
+        raise ValueError("agent_backend conflicts with runner_profile")
+    selected = agent_backend or runner_profile or "codex"
     if selected == "default":
         selected = "codex"
     if selected not in RUNNER_PROFILES:
@@ -695,18 +697,10 @@ def _with_auto_accounting(result: Any, *, pilot_evals: int, auto: Mapping[str, A
     return result
 
 
-def _seed_score(seed_candidate: str, task: Mapping[str, Any]) -> float | None:
-    """Evaluate the seed once for adaptive engine comparison when possible."""
+def _seed_score(seed_candidate: str, task: Mapping[str, Any]) -> float:
+    from gepa_omni.api import _seed_score as score_seed
 
-    evaluator = task.get("evaluator")
-    examples = task.get("valset") or task.get("dataset")
-    if not callable(evaluator) or not examples:
-        return None
-    try:
-        value = evaluator(seed_candidate, list(examples)[0])
-        return float(value[0] if isinstance(value, tuple) else value)
-    except Exception:  # noqa: BLE001 - seed scoring is advisory, not a run failure
-        return None
+    return score_seed(seed_candidate, task)
 
 
 def _auto_rank(result: Any, seed_score: float | None) -> float:
@@ -716,7 +710,9 @@ def _auto_rank(result: Any, seed_score: float | None) -> float:
     if isinstance(metadata, dict) and metadata.get("scored") is False:
         return float("-inf")
     score = float(getattr(result, "best_score", float("-inf")))
-    evaluations = max(1, int(getattr(result, "total_evals", 1) or 1))
+    evaluations = int(getattr(result, "total_evals", 0))
+    if evaluations <= 0 or not math.isfinite(score):
+        return float("-inf")
     improvement = score - seed_score if seed_score is not None else score
     return improvement / evaluations
 
@@ -802,10 +798,12 @@ def _run_auto(
     winning_candidate = getattr(winning_result, "best_candidate", None)
     if not isinstance(winning_candidate, str):
         raise TypeError("auto pilot returned no string best_candidate")
-    continuation = continuation_engine if continuation_engine != DEFAULT_CONTINUATION_ENGINE else winning_engine
+    if rank((winning_engine, winning_result)) == float("-inf"):
+        raise ValueError("no auto pilot produced a measured finite score")
+    continuation = continuation_engine or winning_engine
     result = run_optimization(
         winning_candidate,
-        task=_task_for_phase(task, include_test_set=True),
+        task=_task_for_phase(task, include_test_set=False),
         engine=continuation,
         max_evals=plan.continuation_evals,
         max_token_cost=plan.continuation_token_cost,
@@ -835,7 +833,24 @@ def _run_auto(
         max_candidates_per_iter=max_candidates_per_iter,
         ralph=ralph,
     )
-    pilot_evals = sum(int(getattr(value, "total_evals", 0)) for _engine, value in pilot_results)
+    total_continuation_evals = int(getattr(result, "total_evals", 0))
+    if float(winning_result.best_score) > float(result.best_score):
+        result = (
+            replace(winning_result, total_evals=total_continuation_evals, metadata=dict(winning_result.metadata))
+            if is_dataclass(winning_result)
+            else SimpleNamespace(
+                best_candidate=winning_result.best_candidate,
+                best_score=winning_result.best_score,
+                total_evals=total_continuation_evals,
+                metadata=dict(getattr(winning_result, "metadata", {})),
+            )
+        )
+    scores = _score_public_test_set(result.best_candidate, task)
+    if scores:
+        result.metadata.update(test_score=sum(scores) / len(scores), test_scores=scores)
+    pilot_evals = sum(int(getattr(value, "total_evals", 0)) for _engine, value in pilot_results) + len(
+        task.get("valset") or task.get("dataset") or [None]
+    )
     return _with_auto_accounting(
         result,
         pilot_evals=pilot_evals,
@@ -864,7 +879,7 @@ def _run_legacy_omni(
     stop_at_score: float | None = None,
     max_concurrency: int = 1,
     sandbox: bool = True,
-    runner_profile: str = "codex",
+    runner_profile: str | None = None,
     agent_backend: str | None = None,
     agent_model: str | None = None,
     codex_model: str | None = None,
@@ -973,7 +988,7 @@ def run_omni(
     stop_at_score: float | None = None,
     max_concurrency: int = 1,
     sandbox: bool = True,
-    runner_profile: str = "codex",
+    runner_profile: str | None = None,
     agent_backend: str | None = None,
     agent_model: str | None = None,
     codex_model: str | None = None,
@@ -1122,11 +1137,11 @@ def run_optimization(
     max_token_cost: float | None,
     run_dir: str | Path,
     output_dir: str | Path,
-    continuation_engine: str = DEFAULT_CONTINUATION_ENGINE,
+    continuation_engine: str | None = None,
     stop_at_score: float | None = None,
     max_concurrency: int = 1,
     sandbox: bool = True,
-    runner_profile: str = "codex",
+    runner_profile: str | None = None,
     agent_backend: str | None = None,
     agent_model: str | None = None,
     codex_model: str | None = None,
@@ -1157,6 +1172,10 @@ def run_optimization(
     runner_profile = _resolve_runner_profile(runner_profile, agent_backend)
     gepa_parallel_proposals = _validate_parallel_proposals(gepa_parallel_proposals)
     selected_strategy = strategy or ("auto" if engine is None else "gepa")
+    if continuation_engine is not None and continuation_engine not in STANDALONE_ENGINES:
+        raise ValueError("unsupported continuation_engine")
+    if selected_strategy == "gepa" and engine is None:
+        engine = "gepa"
     if selected_strategy not in {"auto", "gepa", "omni"}:
         raise ValueError("strategy must be one of: auto, gepa, omni")
     if engine is not None and selected_strategy == "omni":
@@ -1195,7 +1214,8 @@ def run_optimization(
             ralph=ralph,
         )
     if selected_strategy == "auto" and engine is None:
-        plan = plan_auto_allocation(max_evals, max_token_cost)
+        pool_size = len(task.get("valset") or task.get("dataset") or [None])
+        plan = plan_auto_allocation(max_evals, max_token_cost, selection_pool_size=pool_size, baseline_evals=pool_size)
         if plan.fallback_engine is not None:
             engine = plan.fallback_engine
         else:

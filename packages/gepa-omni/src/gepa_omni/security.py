@@ -8,7 +8,7 @@ import re
 import socket
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from urllib.parse import urlsplit, urlunsplit
 
 
@@ -36,7 +36,9 @@ def redact_diagnostic(value: object, *, secrets: tuple[str, ...] = ()) -> str:
         if secret:
             text = text.replace(secret, "[REDACTED]")
     text = re.sub(r"(?i)(bearer\s+)[^\s,;]+", r"\1[REDACTED]", text)
-    text = re.sub(r"(?i)(api[_-]?key|token|secret|password)=([^&\s]+)", r"\1=[REDACTED]", text)
+    text = re.sub(
+        r"(?i)((?:api[_-]?key|token|secret|password)[\"']?\s*[=:]\s*[\"']?)([^&\s\"',}]+)", r"\1[REDACTED]", text
+    )
     return " ".join(text.split())[:500]
 
 
@@ -46,8 +48,9 @@ class EndpointConfiguration:
 
     base_url: str
     model: str
-    api_key: str
+    api_key: str = field(repr=False)
     key_source: str
+    addresses: tuple[str, ...] = ()
 
     @property
     def endpoint(self) -> str:
@@ -66,18 +69,16 @@ def _host_is_private(host: str) -> bool:
         address = ipaddress.ip_address(normalized)
     except ValueError:
         return False
-    return (
-        address.is_private
-        or address.is_link_local
-        or address.is_loopback
-        or address.is_reserved
-        or address.is_unspecified
-    )
+    return not address.is_global
 
 
-def _validate_url(base_url: str, *, allow_private: bool) -> tuple[str, str, bool]:
+def _validate_url(base_url: str, *, allow_private: bool) -> tuple[str, str, bool, tuple[str, ...]]:
     value = base_url.strip().rstrip("/")
-    parsed = urlsplit(value)
+    try:
+        parsed = urlsplit(value)
+        _ = parsed.port
+    except ValueError as exc:
+        raise EndpointPolicyError("endpoint URL or port is invalid") from exc
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise EndpointPolicyError("endpoint must be an absolute http:// or https:// URL")
     if parsed.username is not None or parsed.password is not None:
@@ -96,21 +97,29 @@ def _validate_url(base_url: str, *, allow_private: bool) -> tuple[str, str, bool
         raise EndpointPolicyError("remote endpoints must use HTTPS; HTTP is allowed only for loopback")
     if _host_is_private(host) and not (allow_private or is_loopback):
         raise EndpointPolicyError("private, link-local, and metadata endpoints require explicit opt-in")
-    if not allow_private and not is_loopback:
-        try:
-            addresses = {item[4][0] for item in socket.getaddrinfo(host, None)}
-        except (OSError, socket.gaierror) as exc:
-            raise EndpointPolicyError(f"endpoint hostname could not be resolved; refusing {host!r}") from exc
-        if any(_host_is_private(address) for address in addresses):
-            raise EndpointPolicyError(
-                "endpoint resolves to a private or link-local address; explicit opt-in is required"
+    try:
+        addresses = tuple(
+            sorted(
+                {
+                    item[4][0]
+                    for item in socket.getaddrinfo(
+                        host, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM
+                    )
+                }
             )
+        )
+    except (OSError, ValueError, UnicodeError) as exc:
+        raise EndpointPolicyError("endpoint hostname could not be resolved") from exc
+    if not addresses:
+        raise EndpointPolicyError("endpoint hostname resolved to no addresses")
+    if not allow_private and not is_loopback and any(_host_is_private(address) for address in addresses):
+        raise EndpointPolicyError("endpoint resolves to a private or non-public address; explicit opt-in is required")
     sanitized = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
     if parsed.query and any(
         token.lower() in parsed.query.lower() for token in ("key", "token", "secret", "password", "authorization")
     ):
         raise EndpointPolicyError("endpoint query strings must not contain credential-like parameters")
-    return sanitized, host, host in OFFICIAL_OPENAI_HOSTS
+    return sanitized, host, host in OFFICIAL_OPENAI_HOSTS, addresses
 
 
 def chat_completions_url(base_url: str) -> str:
@@ -159,8 +168,10 @@ def resolve_endpoint(
 
     bound = _CALL_ENDPOINT.get()
     if bound is not None and base_url is None and api_key is None and api_key_env is None and environ is None:
-        if model is None or model.strip() == bound.model:
+        if model is None:
             return bound
+        if not isinstance(model, str) or not model.strip():
+            raise EndpointPolicyError("missing required endpoint configuration: OPENAI_MODEL")
         return replace(bound, model=model.strip())
     env = os.environ if environ is None else environ
     selected_url = base_url if base_url is not None else env.get("OPENAI_BASE_URL")
@@ -169,7 +180,7 @@ def resolve_endpoint(
         raise EndpointPolicyError("missing required endpoint configuration: OPENAI_BASE_URL")
     if not isinstance(selected_model, str) or not selected_model.strip():
         raise EndpointPolicyError("missing required endpoint configuration: OPENAI_MODEL")
-    validated_url, _host, is_official_openai = _validate_url(
+    validated_url, _host, is_official_openai, addresses = _validate_url(
         selected_url,
         allow_private=_truthy(env.get("GEPA_OMNI_ALLOW_PRIVATE_ENDPOINTS")),
     )
@@ -191,14 +202,14 @@ def resolve_endpoint(
         )
     else:
         selected_key = explicit_key or provider_key or env.get("GEPA_OMNI_API_KEY")
-        key_source = "explicit" if explicit_key else provider_name or "GEPA_OMNI_API_KEY"
+        key_source = "explicit" if explicit_key else provider_name if provider_key else "GEPA_OMNI_API_KEY"
     if not isinstance(selected_key, str) or not selected_key.strip():
         if not is_official_openai and env.get("OPENAI_API_KEY"):
             raise EndpointPolicyError(
                 "OPENAI_API_KEY is not permitted for this endpoint; configure GEPA_OMNI_API_KEY or a provider-specific key"
             )
         raise EndpointPolicyError("missing endpoint API key; configure it through the environment or a secret manager")
-    return EndpointConfiguration(validated_url, selected_model.strip(), selected_key.strip(), key_source)
+    return EndpointConfiguration(validated_url, selected_model.strip(), selected_key.strip(), key_source, addresses)
 
 
 __all__ = [

@@ -45,8 +45,8 @@ Choose one of three strategies:
 | `auto` | You want small pilots followed by adaptive allocation. |
 
 `auto` evaluates the seed, pilots eligible engines, compares improvement per
-evaluation and per dollar, and gives the remaining budget to the strongest
-engine or engines. Small budgets fall back to standalone GEPA or Best-of-N.
+evaluation, and gives the remaining budget to the strongest
+engine or engines. Small budgets fall back to standalone GEPA.
 `omni` is not the default and requires enough budget for its fixed phases.
 
 Keep `test_set` untouched until final reporting. `dataset` and `valset` may be
@@ -92,6 +92,8 @@ The direct upstream launcher is also available when only standalone GEPA is
 needed:
 
 ```python
+import os
+
 from gepa.optimize_anything import (
     EngineConfig,
     GEPAConfig,
@@ -105,7 +107,7 @@ result = optimize_anything(
     objective="Improve the candidate against the evaluator.",
     config=GEPAConfig(
         engine=EngineConfig(max_metric_calls=20),
-        reflection=ReflectionConfig(reflection_lm=model),
+        reflection=ReflectionConfig(reflection_lm=os.environ["OPENAI_MODEL"]),
     ),
 )
 ```

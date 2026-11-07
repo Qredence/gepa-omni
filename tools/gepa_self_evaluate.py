@@ -305,8 +305,11 @@ def evaluate_candidate(
         shutil.copy2(REPO_ROOT / TEST_RELATIVE, test_path)
         shutil.copy2(REPO_ROOT / "tests" / "conftest.py", test_path.parent / "conftest.py")
         shutil.copy2(REPO_ROOT / "pyproject.toml", fixture / "pyproject.toml")
-        package_source = REPO_ROOT / "packages" / "gepa-omni"
-        shutil.copytree(package_source, fixture / "packages" / "gepa-omni")
+        package_root = fixture / "packages" / "gepa-omni"
+        shutil.copytree(staged_plugin / "skills/gepa-omni-skill/scripts/gepa_omni", package_root / "src/gepa_omni")
+        from stage_plugin import _write_blob_from_index
+
+        _write_blob_from_index(Path("packages/gepa-omni/pyproject.toml"), package_root / "pyproject.toml")
         candidate_path = fixture / TARGET_RELATIVE
         candidate_path.write_text(candidate_text, encoding="utf-8")
         results = _run_candidate_checks(
@@ -543,7 +546,7 @@ def main(argv: list[str] | None = None) -> int:
             "engine": "gepa",
             "engine_best_score": getattr(result, "best_score", None),
             "total_evals": getattr(result, "total_metric_calls", getattr(result, "total_evals", None)),
-            "output_dir": str(run_dir / "gepa"),
+            "output_dir": str(run_dir / "gepa-output"),
             "proposal_error_count": len(errors),
             "run_dir": str(run_dir),
         }

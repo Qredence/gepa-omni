@@ -146,14 +146,16 @@ class ChatProposerTests(unittest.TestCase):
                 {
                     "message": {
                         "content": json.dumps(
-                            {"new_texts": {"prompt": "ok", "extra": "bad"}, "summary": None}
+                            {"new_texts": {"prompt": "ok", "sensitive-provider-key-name": "bad"}, "summary": None}
                         )
                     }
                 }
             ]
         }
-        with self.assertRaisesRegex(ProposalValidationError, "extra"):
+        with self.assertRaisesRegex(ProposalValidationError, "extra_count=1") as caught:
             self._proposer()({"prompt": "seed"}, {}, ["prompt"])
+        self.assertNotIn("sensitive-provider-key-name", str(caught.exception))
+        self.assertNotIn("sensitive-provider-key-name", (caught.exception.proposal_dir / "error.txt").read_text())
 
     def test_timeout_is_distinct_from_validation_failure(self) -> None:
         def timeout_opener(_request: object, timeout: float) -> FakeResponse:

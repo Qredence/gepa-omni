@@ -35,17 +35,6 @@ class ChatCompletionError(RuntimeError):
     """Raised when an OpenAI-compatible Chat Completions request fails."""
 
 
-class _RejectRedirects(urllib.request.HTTPRedirectHandler):
-    """Refuse to follow redirects so the bearer token stays on the approved host."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
-        raise urllib.error.HTTPError(req.full_url, code, "Chat Completions redirects are not followed", headers, fp)
-
-
-def _urlopen_without_redirects(request: urllib.request.Request, timeout: float) -> Any:
-    return urllib.request.build_opener(_RejectRedirects).open(request, timeout=timeout)
-
-
 Urlopen = Callable[..., Any]
 
 
@@ -154,7 +143,9 @@ class OpenAIChatCompletionsClient:
         )
         if (self.input_cost_per_million is None) != (self.output_cost_per_million is None):
             raise ValueError("input/output pricing must be supplied together")
-        self._opener = opener or _urlopen_without_redirects
+        from gepa_omni.transport import pinned_urlopen
+
+        self._opener = opener or pinned_urlopen(endpoint)
 
     @property
     def endpoint(self) -> str:
@@ -215,9 +206,17 @@ class OpenAIChatCompletionsClient:
         except (TimeoutError, socket.timeout) as exc:
             raise TimeoutError(f"Chat Completions request exceeded {self.timeout_seconds:g}s") from exc
         except urllib.error.HTTPError as exc:
-            raise ChatCompletionError(f"Chat Completions HTTP {exc.code}") from exc
+            try:
+                detail = exc.read(4096).decode("utf-8", errors="replace")
+            except OSError:
+                detail = "response body unavailable"
+            raise ChatCompletionError(
+                f"Chat Completions HTTP {exc.code}: {redact_diagnostic(detail, secrets=(self.api_key,))}"
+            ) from exc
         except urllib.error.URLError as exc:
-            raise ChatCompletionError("Chat Completions connection failed") from exc
+            raise ChatCompletionError(
+                f"Chat Completions connection failed: {redact_diagnostic(exc.reason, secrets=(self.api_key,))}"
+            ) from exc
         except OSError as exc:
             raise ChatCompletionError(
                 f"Chat Completions request failed: {redact_diagnostic(exc, secrets=(self.api_key,))}"

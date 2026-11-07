@@ -223,8 +223,7 @@ def test_batch_evaluator_order_and_cardinality_remain_upstream_owned(
     def fake_optimize_anything(*, batch_evaluator, **_kwargs: object) -> list[float]:
         pairs = [("candidate-a", 1), ("candidate-b", 2)]
         values = list(batch_evaluator(pairs))
-        if len(values) != len(pairs):
-            raise ValueError("batch_evaluator returned one result per pair")
+        assert batch_evaluator is original_batch_evaluator
         return values
 
     monkeypatch.setattr(
@@ -237,14 +236,10 @@ def test_batch_evaluator_order_and_cardinality_remain_upstream_owned(
         seen.extend(pairs)
         return [float(example) for _candidate, example in pairs]
 
+    original_batch_evaluator = batch_evaluator
     assert fleet_optimize.optimize(config=config, batch_evaluator=batch_evaluator) == [1.0, 2.0]
     assert seen == [("candidate-a", 1), ("candidate-b", 2)]
 
-    def bad_batch_evaluator(_pairs: list[tuple[str, int]]) -> list[float]:
-        return [1.0]
-
-    with pytest.raises(ValueError, match="one result per pair"):
-        fleet_optimize.optimize(config=config, batch_evaluator=bad_batch_evaluator)
 
 
 def test_legacy_or_unrelated_config_is_rejected(tmp_path: Path) -> None:
@@ -256,3 +251,12 @@ def test_fleet_optimize_has_no_gepa_omni_internal_dependency() -> None:
     source = inspect.getsource(fleet_optimize)
     assert "gepa_omni" not in source
     assert "omni_pipeline" not in source
+
+
+def test_supplied_config_without_output_directory_gets_external_default(tmp_path):
+    config = fleet_optimize.build_config(**_config_paths(tmp_path))
+    config = replace(config, output_dir=None)
+    validated = fleet_optimize._validate_config(config, fleet_optimize._load_surface())
+    assert validated.output_dir is not None
+    assert Path(validated.output_dir).is_absolute()
+    assert Path.cwd() not in Path(validated.output_dir).parents

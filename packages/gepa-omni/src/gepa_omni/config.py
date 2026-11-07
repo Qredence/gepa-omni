@@ -30,11 +30,13 @@ class OmniConfig:
     sandbox: bool = True
     run_dir: str | None = None
     output_dir: str | None = None
-    continuation_engine: str = "gepa"
+    continuation_engine: str | None = None
     input_cost_per_million: float | None = None
     output_cost_per_million: float | None = None
 
     def __post_init__(self) -> None:
+        if self.continuation_engine not in {None, "gepa", "autoresearch", "meta_harness", "best_of_n"}:
+            raise ValueError("unsupported continuation_engine")
         if self.strategy not in {"gepa", "omni", "auto"}:
             raise ValueError("strategy must be one of: auto, gepa, omni")
         if self.max_evals is None and self.max_token_cost is None:

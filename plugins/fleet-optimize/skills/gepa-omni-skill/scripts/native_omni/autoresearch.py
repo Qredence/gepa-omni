@@ -33,7 +33,7 @@ from .core import BudgetTracker, EvalServer, Result, Task, _published_score
 @dataclass
 class AutoResearchConfig:
     model: str | None = None
-    agent_backend: str = "codex"
+    agent_backend: str | None = None
     runner_profile: str | None = None
     codex_command: str = "codex"
     pi_command: str = "pi"
@@ -52,10 +52,11 @@ class AutoResearchConfig:
     stop_at_score: float | None = None
 
     def __post_init__(self) -> None:
-        if self.runner_profile is not None:
-            self.agent_backend = self.runner_profile
-        self.agent_backend = str(self.agent_backend).strip().lower()
-        self.runner_profile = self.agent_backend
+        backend = None if self.agent_backend is None else str(self.agent_backend).strip().lower()
+        profile = None if self.runner_profile is None else str(self.runner_profile).strip().lower()
+        if backend is not None and profile is not None and backend != profile:
+            raise ValueError("agent_backend conflicts with runner_profile; set only one")
+        self.agent_backend = backend or profile or "codex"
         if self.agent_backend not in {"codex", "pi", "claude"}:
             raise ValueError("autoresearch agent_backend must be one of: codex, pi, claude")
         self.ralph = _as_bool(self.ralph)

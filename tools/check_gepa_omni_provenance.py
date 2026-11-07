@@ -19,9 +19,11 @@ def check() -> list[str]:
     errors: list[str] = []
     try:
         provenance = json.loads(PROVENANCE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return [f"could not read {PROVENANCE_PATH}: {exc}"]
 
+    if not isinstance(provenance, dict):
+        return ["provenance must be an object"]
     upstream = provenance.get("upstream")
     if not isinstance(upstream, dict):
         return ["provenance.upstream must be an object"]
@@ -37,11 +39,21 @@ def check() -> list[str]:
         source = SKILL_ROOT / relative_path
         if not source.is_file():
             errors.append(f"provenance source file is missing: {relative_path}")
-        elif isinstance(commit, str) and commit not in source.read_text(encoding="utf-8"):
-            errors.append(f"provenance revision is absent from source header: {relative_path}")
+        else:
+            try:
+                text = source.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                errors.append(f"could not read provenance source: {relative_path}")
+                continue
+            if isinstance(commit, str) and commit not in text:
+                errors.append(f"provenance revision is absent from source header: {relative_path}")
 
     for path in (NOTICE_PATH, SKILL_PATH):
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            errors.append(f"could not read {path}: {exc}")
+            continue
         if isinstance(commit, str) and commit not in text:
             errors.append(f"provenance revision is absent from {path.relative_to(REPO_ROOT)}")
     return errors

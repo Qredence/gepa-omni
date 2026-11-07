@@ -65,6 +65,13 @@ def _index_entries(repo_prefix: Path) -> list[tuple[str, Path]]:
         detail = result.stderr.decode(errors="replace").strip()
         raise RuntimeError(f"could not enumerate tracked files under {repo_prefix}: {detail}")
 
+    intent = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "diff", "--name-only", "-z", "--diff-filter=A", "--", str(repo_prefix)],
+        capture_output=True,
+        check=True,
+    )
+    if intent.stdout:
+        raise ValueError("intent-to-add entries cannot be staged as a plugin payload")
     entries: list[tuple[str, Path]] = []
     for entry in result.stdout.decode().split("\0"):
         if not entry:
@@ -90,6 +97,9 @@ def _tracked_paths(plugin_name: str, package_format: str) -> list[Path]:
         relative_path = repo_path.relative_to(plugin_prefix)
         if any(relative_path == root or root in relative_path.parents for root in shipped_paths):
             tracked_paths.append(relative_path)
+    required = Path("plugin.json") if package_format == "portable" else Path(".codex-plugin/plugin.json")
+    if required not in tracked_paths:
+        raise ValueError(f"required manifest is absent from the git index: {plugin_prefix / required}")
     return sorted(set(tracked_paths))
 
 
@@ -97,6 +107,8 @@ def _tracked_public_package_py_paths() -> list[Path]:
     repo_paths = [
         repo_path for _mode, repo_path in _index_entries(PUBLIC_PACKAGE_REPO_PREFIX) if repo_path.suffix == ".py"
     ]
+    if PUBLIC_PACKAGE_REPO_PREFIX / "__init__.py" not in repo_paths:
+        raise ValueError("public GEPA Omni package has no indexed __init__.py")
     return sorted(repo_paths)
 
 
@@ -131,10 +143,12 @@ def stage(
 
     plugin_root = _plugin_root(plugin_name)
     destination = _validate_output(output, plugin_name=plugin_name)
+    tracked_paths = _tracked_paths(plugin_name, package_format)
+    _tracked_public_package_py_paths()
     destination.mkdir(parents=True, exist_ok=True)
 
     plugin_prefix = plugin_root.relative_to(REPO_ROOT)
-    for relative_path in _tracked_paths(plugin_name, package_format):
+    for relative_path in tracked_paths:
         _write_blob_from_index(plugin_prefix / relative_path, destination / relative_path)
     _stage_public_package(destination)
     return destination

@@ -303,7 +303,7 @@ class CodexAgentProposer:
         if actual != expected:
             raise ProposalValidationError(
                 "new_texts keys do not match requested components; "
-                f"missing={sorted(expected - actual)}, extra={sorted(actual - expected)}",
+                f"missing={sorted(expected - actual)}, extra_count={len(actual - expected)}",
                 proposal_dir,
             )
         invalid = [name for name in components if not isinstance(new_texts[name], str)]

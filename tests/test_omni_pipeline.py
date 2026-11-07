@@ -726,7 +726,7 @@ class OmniPipelineTests(unittest.TestCase):
         with patch.object(omni_pipeline, "run_optimization", wrapped):
             result = omni_pipeline.run_optimization(
                 "seed",
-                task=self.task,
+                task={**self.task, "evaluator": lambda *_: (0.0, {})},
                 strategy="auto",
                 max_evals=40,
                 max_token_cost=None,
@@ -738,8 +738,8 @@ class OmniPipelineTests(unittest.TestCase):
 
         self.assertIsInstance(result, Result)
         self.assertTrue(result.__dataclass_params__.frozen)
-        self.assertEqual(result.total_evals, 8)
-        self.assertEqual(result.metadata["auto"]["pilot_evals"], 6)
+        self.assertEqual(result.total_evals, 9)
+        self.assertEqual(result.metadata["auto"]["pilot_evals"], 7)
         self.assertEqual(result.metadata["auto"]["continuation_engine"], "autoresearch")
 
     def test_native_best_of_n_is_independent_and_scores_heldout_afterwards(self) -> None:

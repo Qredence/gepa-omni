@@ -82,3 +82,6 @@ The compatibility gate requires the latest engine-pluggable surface:
 
 If any required symbol is missing, install the newest upstream package or Git
 revision and rerun preflight. No old API fallback is attempted.
+
+Explicit keys in `engine_config` and `reflection_config` override helper defaults.
+Engine worker overrides do not override the shared server’s top-level `max_concurrency`.

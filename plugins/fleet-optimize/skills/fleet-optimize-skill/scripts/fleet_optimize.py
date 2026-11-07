@@ -44,6 +44,18 @@ class UpstreamSurface:
     selection: Mapping[str, type[Any]]
 
 
+_REQUIRED_CONFIG_FIELDS = {
+    "engine",
+    "max_evals",
+    "max_token_cost",
+    "max_concurrency",
+    "output_dir",
+    "run_dir",
+    "stop_at_score",
+    "engine_config",
+}
+
+
 def _resolve_config_class(api_module: ModuleType, optimize_anything: Callable[..., Any]) -> type[Any]:
     """Find the current config class without selecting the legacy GEPAConfig."""
 
@@ -54,7 +66,6 @@ def _resolve_config_class(api_module: ModuleType, optimize_anything: Callable[..
     except (NameError, TypeError):
         pass
 
-    required_fields = {"engine", "max_evals", "max_concurrency", "engine_config"}
     seen: set[int] = set()
     for candidate in candidates:
         for config_candidate in (candidate, *get_args(candidate)):
@@ -67,7 +78,7 @@ def _resolve_config_class(api_module: ModuleType, optimize_anything: Callable[..
                 parameters = inspect.signature(config_candidate).parameters
             except (TypeError, ValueError):
                 continue
-            if required_fields.issubset(parameters):
+            if _REQUIRED_CONFIG_FIELDS.issubset(parameters):
                 return config_candidate
     raise FleetOptimizeCompatibilityError(
         "Installed GEPA does not expose a current engine-pluggable config with "
@@ -114,8 +125,7 @@ def _load_surface() -> UpstreamSurface:
         raise FleetOptimizeCompatibilityError(
             "Installed GEPA optimize_anything has no batch_evaluator parameter; install the latest upstream GEPA."
         )
-    required_config_fields = {"engine", "max_evals", "max_concurrency", "engine_config"}
-    missing_config_fields = sorted(required_config_fields - set(config_parameters))
+    missing_config_fields = sorted(_REQUIRED_CONFIG_FIELDS - set(config_parameters))
     if missing_config_fields:
         raise FleetOptimizeCompatibilityError(
             "Installed GEPA engine-pluggable config is incompatible; missing fields: "
@@ -279,7 +289,9 @@ def _validate_config(config: Any, surface: UpstreamSurface) -> Any:
     updates: dict[str, str] = {}
     for label in ("run_dir", "output_dir"):
         value = getattr(config, label, None)
-        if value is not None:
+        if value is None:
+            updates[label] = _external_path(None, label=label, prefix=f"fleet-optimize-{label}-")
+        else:
             resolved = _validate_external_path(value, label=label)
             if resolved != value:
                 updates[label] = resolved

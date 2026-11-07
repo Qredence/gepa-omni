@@ -49,7 +49,6 @@ class BestOfNConfig:
             )
         selected = backend if backend is not None else profile
         self.agent_backend = "codex" if selected is None else selected
-        self.runner_profile = self.agent_backend
         if self.agent_backend not in {"codex", "pi", "claude"}:
             raise ValueError("best_of_n agent_backend must be one of: codex, pi, claude")
         self.timeout_seconds = float(self.timeout_seconds)

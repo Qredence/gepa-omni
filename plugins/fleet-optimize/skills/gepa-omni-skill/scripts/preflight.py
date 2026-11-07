@@ -21,9 +21,8 @@ import math
 import os
 import sys
 from importlib import metadata as importlib_metadata
-from urllib.parse import urlsplit
 
-from gepa_omni.security import EndpointPolicyError, resolve_endpoint
+from gepa_omni.security import resolve_endpoint
 
 OK, BAD = "\033[32mOK\033[0m", "\033[31mFAIL\033[0m"
 problems: list[str] = []
@@ -67,45 +66,21 @@ def _check_chat_completions_config() -> bool:
     """Validate the shared provider boundary without printing the API key."""
     base_url = os.environ.get("OPENAI_BASE_URL", "").strip()
     model = os.environ.get("OPENAI_MODEL", "").strip()
-    host = (urlsplit(base_url).hostname or "").rstrip(".").lower()
-    official_openai = not base_url or host in {"api.openai.com"}
-    provider_key_name = os.environ.get("GEPA_OMNI_API_KEY_ENV", "").strip()
-    key_name = "OPENAI_API_KEY" if official_openai else provider_key_name or "GEPA_OMNI_API_KEY"
-    api_key = os.environ.get(key_name, "").strip()
-    base_configured = bool(base_url)
-    model_configured = bool(model)
-    key_configured = bool(api_key)
-    check(
-        "OPENAI_BASE_URL is configured",
-        base_configured,
-        "set OPENAI_BASE_URL in the current process; the skill asks for it when missing",
-    )
-    check(
-        "OPENAI_MODEL is configured",
-        model_configured,
-        "set OPENAI_MODEL in the current process; the skill asks for it when missing",
-    )
-    check(
-        "approved endpoint API key is configured",
-        key_configured,
-        "configure OPENAI_API_KEY for api.openai.com, or GEPA_OMNI_API_KEY or GEPA_OMNI_API_KEY_ENV otherwise, through the environment or a secret manager; do not provide it in chat",
-    )
-    valid_scheme = not base_url or base_url.startswith(("http://", "https://"))
-    check(
-        "OPENAI_BASE_URL uses HTTP(S)",
-        valid_scheme,
-        "set OPENAI_BASE_URL to an http:// or https:// URL",
-    )
-    policy_ok = False
-    if base_configured and model_configured and key_configured and valid_scheme:
-        try:
-            resolve_endpoint(environ=os.environ)
-            policy_ok = True
-        except EndpointPolicyError as exc:
-            check("Chat Completions endpoint security policy", False, str(exc))
-    else:
-        check("Chat Completions endpoint security policy", False, "configure the endpoint, model, and approved key")
-    return base_configured and model_configured and key_configured and valid_scheme and policy_ok
+    check("OPENAI_BASE_URL is configured", bool(base_url), "set OPENAI_BASE_URL in the current process")
+    check("OPENAI_MODEL is configured", bool(model), "set OPENAI_MODEL in the current process")
+    try:
+        resolve_endpoint(environ=os.environ)
+    except ValueError as exc:
+        check("Chat Completions endpoint security policy", False, str(exc))
+        check(
+            "approved endpoint API key is configured",
+            False,
+            "configure OPENAI_API_KEY for api.openai.com; otherwise configure GEPA_OMNI_API_KEY or set GEPA_OMNI_API_KEY_ENV to the name of a provider-key environment variable; do not provide it in chat",
+        )
+        return False
+    check("approved endpoint API key is configured", True, "configured through the environment")
+    check("Chat Completions endpoint security policy", True, "validated")
+    return True
 
 
 def _check_gepa_surface() -> bool:

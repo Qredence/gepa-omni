@@ -102,11 +102,9 @@ class NativeCoreTests(unittest.TestCase):
         )
         server = EvalServer(task, BudgetTracker(max_evals=1))
 
-        score, info = server.evaluate_split("candidate", "train")
-
-        self.assertEqual(score, 1.0)
-        self.assertEqual(info["num_evaluated"], 1)
-        self.assertEqual(server.budget.used, 1)
+        with self.assertRaises(BudgetExhausted):
+            server.evaluate_split("candidate", "train")
+        self.assertEqual(server.budget.used, 0)
 
     def test_atomic_reservation_prevents_concurrent_over_budget_evaluator_calls(self) -> None:
         started = threading.Event()
@@ -227,9 +225,9 @@ class NativeCoreTests(unittest.TestCase):
     def test_best_of_n_runner_profile_and_agent_backend_agree_or_raise(self) -> None:
         self.assertEqual(BestOfNConfig().agent_backend, "codex")
         self.assertEqual(BestOfNConfig(runner_profile="pi").agent_backend, "pi")
-        self.assertEqual(BestOfNConfig(agent_backend="claude").runner_profile, "claude")
+        self.assertIsNone(BestOfNConfig(agent_backend="claude").runner_profile)
         self.assertEqual(BestOfNConfig(agent_backend="Pi", runner_profile=" pi ").agent_backend, "pi")
-        self.assertEqual(BestOfNEngine({"agent_backend": "pi"}).config.runner_profile, "pi")
+        self.assertIsNone(BestOfNEngine({"agent_backend": "pi"}).config.runner_profile)
 
         with self.assertRaisesRegex(ValueError, "conflicts with runner_profile"):
             BestOfNConfig(agent_backend="codex", runner_profile="pi")
@@ -238,5 +236,4 @@ class NativeCoreTests(unittest.TestCase):
         config = BestOfNConfig(agent_backend="pi")
 
         self.assertEqual(BestOfNEngine(config, agent_backend="pi").config.agent_backend, "pi")
-        with self.assertRaisesRegex(ValueError, "conflicts with runner_profile"):
-            BestOfNEngine(config, agent_backend="claude")
+        self.assertEqual(BestOfNEngine(config, agent_backend="claude").config.agent_backend, "claude")

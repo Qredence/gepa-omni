@@ -144,3 +144,44 @@ class StagePluginTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_index_requirements_and_intent_to_add_in_isolated_repository(tmp_path, monkeypatch):
+    import stage_plugin as staging
+    import pytest
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+
+    git("init")
+    monkeypatch.setattr(staging, "REPO_ROOT", repo)
+    monkeypatch.setattr(staging, "PLUGINS_ROOT", repo / "plugins")
+    package = repo / staging.PUBLIC_PACKAGE_REPO_PREFIX
+    monkeypatch.setattr(staging, "PUBLIC_PACKAGE_ROOT", package)
+    plugin = repo / "plugins/fleet-optimize"
+    plugin.mkdir(parents=True)
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (plugin / "LICENSE").write_text("MIT")
+    git("add", ".")
+    for fmt in ("portable", "codex"):
+        with pytest.raises(ValueError, match="required manifest"):
+            staging.stage(tmp_path / fmt / "fleet-optimize", package_format=fmt)
+    (plugin / "plugin.json").write_text("{}")
+    git("add", ".")
+    (package / "__init__.py").write_text("dirty content")
+    staged = staging.stage(tmp_path / "empty" / "fleet-optimize")
+    assert (staged / staging.PUBLIC_PACKAGE_DESTINATION / "__init__.py").read_text() == ""
+    intent = package / "intent.py"
+    intent.write_text("not staged")
+    git("add", "-N", str(intent))
+    with pytest.raises(ValueError, match="intent-to-add"):
+        staging.stage(tmp_path / "intent" / "fleet-optimize")
+    assert not (tmp_path / "intent" / "fleet-optimize").exists()
+    git("reset", "--", str(intent))
+    git("rm", "--cached", "-f", str(package / "__init__.py"))
+    with pytest.raises(ValueError, match="__init__"):
+        staging.stage(tmp_path / "missing-package" / "fleet-optimize")
