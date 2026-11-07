@@ -1,0 +1,19 @@
+tests/test_preflight.py
+  s_729035695476ae::t_24e05cc34a6273 124,133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e3b07e7782b6c844af584a83d337088ae5737e4a",
+  "prompts": {},
+  "sessions": {
+    "s_729035695476ae": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b40d-9da1-7701-9e3d-784c1fa1bd11",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
