@@ -33,8 +33,7 @@ def proposer(
     components_to_update,
     *,
     metadata=None,
-) -> dict[str, str]:
-    ...
+) -> dict[str, str]: ...
 ```
 
 Each call creates a unique external diagnostics directory. Raw candidate,

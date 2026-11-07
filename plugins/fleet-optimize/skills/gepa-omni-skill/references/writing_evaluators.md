@@ -105,9 +105,11 @@ def evaluate(candidate, example):
     output, score, correct_rate, speedup = run_and_grade(candidate, example)
     return score, {
         "output": output,
-        "score": score,                     # the scalar the optimizer selects on
-        "scores": {"correct": correct_rate, # per-objective metrics for the Pareto frontier
-                   "speedup": speedup},     # all "higher is better"
+        "score": score,  # the scalar the optimizer selects on
+        "scores": {
+            "correct": correct_rate,  # per-objective metrics for the Pareto frontier
+            "speedup": speedup,
+        },  # all "higher is better"
     }
 ```
 For the GEPA engine, pass `EngineConfig(frontier_type="hybrid")` inside

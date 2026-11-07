@@ -52,9 +52,12 @@ budget allocation. `result` exposes `best_candidate`, `best_score`,
 
 ## Choose a strategy
 
+- With only this Python package installed, use `gepa` or `auto`; package-only
+  `auto` pilots standalone GEPA and Best-of-N. The `omni` strategy requires the
+  GEPA Omni plugin runtime and raises an error when that adapter is unavailable.
 - `gepa` runs standalone reflective GEPA.
-- `omni` runs the fixed GEPA, AutoResearch, and Meta-Harness portfolio and
-  continuation experiment.
+- `omni`, when the plugin runtime is available, runs the fixed GEPA,
+  AutoResearch, and Meta-Harness portfolio and continuation experiment.
 - `auto` pilots eligible engines, then allocates the remaining budget based
   on improvement per evaluation. A budget too small for a useful portfolio
   falls back to standalone GEPA.

@@ -79,8 +79,12 @@ dependency in `packages/gepa-omni/pyproject.toml`.
 Use `gepa-omni-skill` or the `gepa_omni` Python API for one evaluator contract
 across several optimization strategies:
 
+- With a package-only install, `gepa` and `auto` are available; `auto` pilots
+  standalone GEPA and Best-of-N. The `omni` fixed portfolio requires the
+  GEPA Omni plugin runtime, which the marketplace plugin supplies.
 - `strategy="gepa"` runs standalone reflective GEPA.
-- `strategy="omni"` runs a fixed portfolio experiment.
+- `strategy="omni"` runs a fixed portfolio experiment through the plugin
+  runtime; the Python package alone raises an error for this strategy.
 - `strategy="auto"` pilots eligible engines and allocates the remaining
   budget based on improvement per evaluation. When a useful portfolio does not
   fit the supplied budget, it falls back to standalone GEPA.
@@ -168,11 +172,11 @@ Optimize follows upstream GEPA's `OPENAI_*` environment contract and does not
 apply GEPA Omni's provider-key isolation. Use a key scoped appropriately for
 the endpoint configured for that workflow.
 
-Remote endpoints require HTTPS; HTTP is allowed only for loopback. Private
-addresses require explicit opt-in. Interactive setup may request a missing
-model or base URL for the current process; it never asks for a key in chat or
-writes prompted values to `.env`. Configure keys through the environment or a
-secret manager. Preflight remains non-interactive and makes
+For GEPA Omni, remote endpoints require HTTPS; HTTP is allowed only for
+loopback, and private addresses require explicit opt-in. Interactive setup may
+request a missing model or base URL for the current process; it never asks for
+a key in chat or writes prompted values to `.env`. Configure keys through the
+environment or a secret manager. Preflight remains non-interactive and makes
 no model call unless `--test-lm` is supplied. Both workflows can send the
 candidate, evaluator inputs, and related prompts to the configured provider.
 Keep `run_dir` and `output_dir` absolute and outside the checkout.
