@@ -5,10 +5,10 @@
   },
   "plugins": [
     {
-      "name": "gepa-omni",
+      "name": "fleet-optimize",
       "source": {
         "source": "local",
-        "path": "./"
+        "path": "./plugins/fleet-optimize"
       },
       "policy": {
         "installation": "AVAILABLE",

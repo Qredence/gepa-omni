@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.coverage
+.coverage.*
 
 # Local virtual environments and development metadata
 .venv/
@@ -16,3 +18,8 @@ runs/
 
 # Operating-system metadata
 .DS_Store
+
+# Local builds of the isolated public package
+packages/gepa-omni/build/
+packages/gepa-omni/dist/
+packages/gepa-omni/src/*.egg-info/

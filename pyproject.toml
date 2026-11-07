@@ -1,23 +1,35 @@
 [project]
-name = "gepa-omni"
+name = "qredence-optimization-marketplace"
 version = "0.1.0"
-description = "Developer tooling and tests for the GEPA Omni plugin."
+description = "Developer tooling and tests for the Qredence optimization plugin marketplace."
 requires-python = ">=3.10"
 dependencies = []
 
-# The plugin targets the published GEPA 0.1.4 API for reflective GEPA. The
-# AutoResearch, Meta-Harness, and Best-of-N runtimes ship in the skill itself.
+# GEPA's latest upstream main is used while the parallel-proposal API is ahead
+# of the newest published release. The lockfile records the exact revision used
+# by CI; refresh it intentionally when moving to a newer upstream revision.
 
 [dependency-groups]
 dev = [
+    "coverage[toml]>=7.0",
     "pytest>=8.0",
     "ruff>=0.15.2",
-    "gepa[full]==0.1.4"
+    "gepa-omni",
+    "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@8a2bed96385202f69caaeb5327a843ed2f5ea225"
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "tools"]
-pythonpath = ["skills/gepa-omni-skill/scripts", "tools"]
+testpaths = [
+    "tests",
+    "tools",
+    "plugins/fleet-optimize/tests",
+]
+pythonpath = [
+    "packages/gepa-omni/src",
+    "plugins/fleet-optimize/skills/gepa-omni-skill/scripts",
+    "plugins/fleet-optimize/skills/fleet-optimize-skill/scripts",
+    "tools",
+]
 
 [tool.ruff]
 target-version = "py310"
@@ -33,3 +45,6 @@ max-complexity = 18
 [tool.uv]
 package = false
 override-dependencies = ["cryptography>=50.0.0"]
+
+[tool.uv.sources]
+gepa-omni = { path = "packages/gepa-omni" }

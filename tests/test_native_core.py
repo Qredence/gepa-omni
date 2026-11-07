@@ -10,9 +10,13 @@ import urllib.request
 from pathlib import Path
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "skills" / "gepa-omni-skill" / "scripts"
+SCRIPT_DIR = (
+    Path(__file__).resolve().parents[1] / "plugins" / "fleet-optimize" / "skills" / "gepa-omni-skill" / "scripts"
+)
 sys.path.insert(0, str(SCRIPT_DIR))
 from native_omni import (  # noqa: E402
+    BestOfNConfig,
+    BestOfNEngine,
     BudgetExhausted,
     BudgetTracker,
     EvalServer,
@@ -92,6 +96,16 @@ class NativeCoreTests(unittest.TestCase):
         with self.assertRaises(BudgetExhausted):
             server.evaluate("xx", 1)
 
+    def test_split_scoring_stops_at_the_remaining_budget(self) -> None:
+        task = Task.from_mapping(
+            {"evaluator": lambda _candidate, item: float(item), "dataset": [1, 2, 3]},
+        )
+        server = EvalServer(task, BudgetTracker(max_evals=1))
+
+        with self.assertRaises(BudgetExhausted):
+            server.evaluate_split("candidate", "train")
+        self.assertEqual(server.budget.used, 0)
+
     def test_atomic_reservation_prevents_concurrent_over_budget_evaluator_calls(self) -> None:
         started = threading.Event()
         release = threading.Event()
@@ -161,6 +175,12 @@ class NativeCoreTests(unittest.TestCase):
                 urllib.request.urlopen(request)
             self.assertEqual(error.exception.code, 404)
 
+    def test_output_dir_inside_repository_is_rejected(self) -> None:
+        result = NativeResult("best", 0.9, 1, [], {})
+        inside_repo = Path(__file__).resolve().parents[1] / "benchmarks"
+        with self.assertRaisesRegex(ValueError, "outside the plugin checkout"):
+            result.persist(inside_repo)
+
     def test_result_and_trace_are_persisted_in_external_output_dir(self) -> None:
         task = Task.from_mapping({"evaluator": lambda _candidate, _item: (0.8, {"ok": True}), "dataset": ["one"]})
         server = EvalServer(task, BudgetTracker(max_evals=2), output_dir=self.output_dir)
@@ -201,3 +221,19 @@ class NativeCoreTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "requires both input/output pricing rates"):
             _validate_budget(1, 1.0)
+
+    def test_best_of_n_runner_profile_and_agent_backend_agree_or_raise(self) -> None:
+        self.assertEqual(BestOfNConfig().agent_backend, "codex")
+        self.assertEqual(BestOfNConfig(runner_profile="pi").agent_backend, "pi")
+        self.assertIsNone(BestOfNConfig(agent_backend="claude").runner_profile)
+        self.assertEqual(BestOfNConfig(agent_backend="Pi", runner_profile=" pi ").agent_backend, "pi")
+        self.assertIsNone(BestOfNEngine({"agent_backend": "pi"}).config.runner_profile)
+
+        with self.assertRaisesRegex(ValueError, "conflicts with runner_profile"):
+            BestOfNConfig(agent_backend="codex", runner_profile="pi")
+
+    def test_best_of_n_rebuild_rejects_conflicting_agent_backend(self) -> None:
+        config = BestOfNConfig(agent_backend="pi")
+
+        self.assertEqual(BestOfNEngine(config, agent_backend="pi").config.agent_backend, "pi")
+        self.assertEqual(BestOfNEngine(config, agent_backend="claude").config.agent_backend, "claude")

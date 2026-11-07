@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -20,7 +20,19 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
       - run: uv sync --locked --group dev
-      - run: uv run pytest -q
+      - run: >-
+          uv run coverage run --branch
+          --source=packages/gepa-omni/src,plugins/fleet-optimize/skills/gepa-omni-skill/scripts,benchmarks/gepa-omni
+          -m pytest -q
+      - run: uv run coverage report --fail-under=50
+      - run: uv run python tools/check_gepa_omni_provenance.py
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: git diff --check
+      - name: Build and clean-install gepa-omni
+        run: |
+          uv build packages/gepa-omni
+          clean_dir="$(mktemp -d)"
+          uv venv "$clean_dir/venv"
+          uv pip install --python "$clean_dir/venv/bin/python" --no-deps packages/gepa-omni/dist/*.whl
+          "$clean_dir/venv/bin/python" -c "from gepa_omni import OmniConfig, optimize, run_optimization; print(OmniConfig.__name__, callable(optimize), callable(run_optimization))"

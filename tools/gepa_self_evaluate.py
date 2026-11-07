@@ -7,12 +7,14 @@ This is a trusted-development operation and requires the explicit
 checkout. Run it from an environment that has ``gepa[full]``, ``pytest``,
 ``ruff``, and the OpenAI-compatible Chat Completions environment:
 
-    uv run --with "gepa[full]==0.1.4" \
-        python skills/gepa-omni-skill/scripts/self_evaluate.py \
+    uv run --with "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@8a2bed96385202f69caaeb5327a843ed2f5ea225" \
+        python plugins/fleet-optimize/skills/gepa-omni-skill/scripts/self_evaluate.py \
         --allow-candidate-execution \
         --plugin-eval-command "node /path/to/plugin-eval.js"
 
-Set ``OPENAI_BASE_URL``, ``OPENAI_MODEL``, and ``OPENAI_API_KEY`` before running.
+Set ``OPENAI_BASE_URL`` and ``OPENAI_MODEL`` before running. Use
+``OPENAI_API_KEY`` only with the official OpenAI host; configure
+``GEPA_OMNI_API_KEY`` or a provider-specific variable for another endpoint.
 """
 
 from __future__ import annotations
@@ -39,11 +41,12 @@ except ImportError:  # pragma: no cover - used when executed as a script
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_ROOT = REPO_ROOT
-STAGED_PLUGIN_NAME = "gepa-omni"
+PLUGIN_ROOT = REPO_ROOT / "plugins" / "fleet-optimize"
+STAGED_PLUGIN_NAME = "fleet-optimize"
 SCRIPT_DIR = PLUGIN_ROOT / "skills" / "gepa-omni-skill" / "scripts"
 PREFLIGHT = SCRIPT_DIR / "preflight.py"
-TARGET_RELATIVE = Path("skills/gepa-omni-skill/scripts/codex_agent_proposer.py")
+PLUGIN_TARGET_RELATIVE = Path("skills/gepa-omni-skill/scripts/codex_agent_proposer.py")
+TARGET_RELATIVE = Path("plugins/fleet-optimize/skills/gepa-omni-skill/scripts/codex_agent_proposer.py")
 TEST_RELATIVE = Path("tests/test_codex_agent_proposer.py")
 COMPONENT = "codex_agent_proposer_py"
 DEFAULT_CHECK_TIMEOUT_SECONDS = 180.0
@@ -166,6 +169,7 @@ def _report_data(result: CommandResult) -> tuple[dict[str, Any], str]:
 def _run_candidate_checks(
     fixture: Path,
     candidate_path: Path,
+    plugin_dir: Path,
     plugin_eval_command: list[str],
     check_timeout_seconds: float,
 ) -> dict[str, CommandResult]:
@@ -193,7 +197,7 @@ def _run_candidate_checks(
             [
                 *plugin_eval_command,
                 "analyze",
-                str(fixture),
+                str(plugin_dir),
                 "--format",
                 "json",
             ],
@@ -292,17 +296,30 @@ def evaluate_candidate(
         )
 
     with tempfile.TemporaryDirectory(prefix="gepa-self-eval-") as temp_dir:
-        fixture = Path(temp_dir) / STAGED_PLUGIN_NAME
-        stage(fixture, package_format="codex")
+        fixture = Path(temp_dir)
+        staged_plugin = fixture / "plugins" / STAGED_PLUGIN_NAME
+        stage(staged_plugin, plugin_name=STAGED_PLUGIN_NAME, package_format="codex")
+        (fixture / ".git").mkdir()
         test_path = fixture / TEST_RELATIVE
         test_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(PLUGIN_ROOT / TEST_RELATIVE, test_path)
-        shutil.copy2(PLUGIN_ROOT / "pyproject.toml", fixture / "pyproject.toml")
+        shutil.copy2(REPO_ROOT / TEST_RELATIVE, test_path)
+        shutil.copy2(REPO_ROOT / "tests" / "conftest.py", test_path.parent / "conftest.py")
+        shutil.copy2(REPO_ROOT / "pyproject.toml", fixture / "pyproject.toml")
+        package_root = fixture / "packages" / "gepa-omni"
+        shutil.copytree(staged_plugin / "skills/gepa-omni-skill/scripts/gepa_omni", package_root / "src/gepa_omni")
+        try:
+            from .stage_plugin import _write_blob_from_index
+        except ImportError:  # pragma: no cover - used when executed as a script
+            from stage_plugin import _write_blob_from_index
+
+        _write_blob_from_index(Path("packages/gepa-omni/README.md"), package_root / "README.md")
+        _write_blob_from_index(Path("packages/gepa-omni/pyproject.toml"), package_root / "pyproject.toml")
         candidate_path = fixture / TARGET_RELATIVE
         candidate_path.write_text(candidate_text, encoding="utf-8")
         results = _run_candidate_checks(
             fixture,
             candidate_path,
+            staged_plugin,
             plugin_eval_command,
             check_timeout_seconds,
         )
@@ -414,7 +431,7 @@ def main(argv: list[str] | None = None) -> int:
         print(preflight.stdout + preflight.stderr, file=sys.stderr)
         return 2
 
-    seed_path = PLUGIN_ROOT / TARGET_RELATIVE
+    seed_path = PLUGIN_ROOT / PLUGIN_TARGET_RELATIVE
     seed = seed_path.read_text(encoding="utf-8")
     baseline = evaluate_candidate(
         seed,
@@ -439,16 +456,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         from codex_agent_proposer import CodexAgentProposer
-        from gepa.optimize_anything import (
-            EngineConfig,
-            GEPAConfig,
-            ReflectionConfig,
-            optimize_anything,
-        )
-        from gepa.utils import ScoreThresholdStopper
+        from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
     except ImportError as exc:
         print(
-            f"GEPA self-evaluation requires the published `gepa[full]==0.1.4` API: {exc}",
+            f"GEPA self-evaluation requires the latest upstream `gepa[full]` API: {exc}",
             file=sys.stderr,
         )
         return 2
@@ -474,8 +485,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         # The public optimize_anything contract is string-candidate-first. This
-        # development-only harness uses one named component because the pinned
-        # fork's custom-proposer bridge requires a mapping for Codex proposals.
+        # development-only harness uses one named component because the custom
+        # proposer bridge requires a mapping for Codex proposals.
         result = optimize_anything(
             seed_candidate={COMPONENT: seed},
             evaluator=evaluate,
@@ -484,23 +495,28 @@ def main(argv: list[str] | None = None) -> int:
             objective=(
                 "Improve the proposer while preserving its public contract, tests, formatting, and read-only behavior."
             ),
-            config=GEPAConfig(
-                engine=EngineConfig(
-                    seed=0,
-                    run_dir=str(run_dir / "gepa"),
-                    max_metric_calls=args.max_metric_calls,
-                    max_candidate_proposals=args.max_candidate_proposals,
-                    max_workers=1,
-                    parallel=False,
-                    cache_evaluation=True,
-                ),
-                reflection=ReflectionConfig(
-                    reflection_lm=None,
-                    custom_candidate_proposer=proposer,
-                    module_selector="all",
-                    reflection_minibatch_size=1,
-                ),
-                stop_callbacks=ScoreThresholdStopper(1.0),
+            config=OptimizeAnythingConfig(
+                engine="gepa",
+                max_evals=args.max_metric_calls,
+                max_concurrency=1,
+                run_dir=str(run_dir / "gepa"),
+                output_dir=str(run_dir / "gepa"),
+                stop_at_score=1.0,
+                engine_config={
+                    "engine": {
+                        "seed": 0,
+                        "max_candidate_proposals": args.max_candidate_proposals,
+                        "max_workers": 1,
+                        "parallel": False,
+                        "cache_evaluation": True,
+                    },
+                    "reflection": {
+                        "reflection_lm": None,
+                        "custom_candidate_proposer": proposer,
+                        "module_selector": "all",
+                        "reflection_minibatch_size": 1,
+                    },
+                },
             ),
         )
     except Exception as exc:

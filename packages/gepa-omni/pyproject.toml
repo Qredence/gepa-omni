@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gepa-omni"
+version = "0.3.0"
+description = "Stable public orchestration API for the GEPA Omni optimization plugin."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@8a2bed96385202f69caaeb5327a843ed2f5ea225",
+]
+license = "MIT"
+authors = [{name = "Qredence"}]
+keywords = ["gepa", "optimization", "prompt-optimization"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

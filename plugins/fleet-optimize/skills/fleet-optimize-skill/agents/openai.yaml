@@ -1,0 +1,6 @@
+interface:
+  display_name: "Fleet Optimize Skill"
+  short_description: "Optimize candidates with parallel GEPA proposals"
+  default_prompt: "Use $fleet-optimize-skill to improve this candidate with parallel GEPA proposals and my evaluator."
+policy:
+  allow_implicit_invocation: true
