@@ -1,0 +1,26 @@
+packages/gepa-omni/README.md
+  s_bb7d6637d80d4b::t_b623833a0bdf56 55-57,59-60
+plugins/fleet-optimize/skills/gepa-omni-skill/references/codex.md
+  s_bb7d6637d80d4b::t_5545a67e39f6ab 36
+README.md
+  s_bb7d6637d80d4b::t_0e50c65ff5201f 82-84,86-87
+  s_bb7d6637d80d4b::t_cabb5c667e884d 175-179
+plugins/fleet-optimize/skills/gepa-omni-skill/references/writing_evaluators.md
+  s_bb7d6637d80d4b::t_5545a67e39f6ab 108-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8de1e494d9558a970a0fbdf19ca01c26342e2139",
+  "prompts": {},
+  "sessions": {
+    "s_bb7d6637d80d4b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b44d-7ada-70d2-a12a-a22be35e0ee3",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
