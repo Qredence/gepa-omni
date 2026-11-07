@@ -31,6 +31,13 @@ surface, install the upstream implementation explicitly:
 uv pip install "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@8a2bed96385202f69caaeb5327a843ed2f5ea225"
 ```
 
+Set `PLUGIN_ROOT` to the installed plugin directory before running the
+preflight. For example, use the plugin path supplied by your host:
+
+```bash
+export PLUGIN_ROOT="/path/to/fleet-optimize"
+```
+
 Before a real run, use the non-interactive preflight:
 
 ```bash

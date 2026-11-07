@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -65,13 +66,6 @@ def _index_entries(repo_prefix: Path) -> list[tuple[str, Path]]:
         detail = result.stderr.decode(errors="replace").strip()
         raise RuntimeError(f"could not enumerate tracked files under {repo_prefix}: {detail}")
 
-    intent = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "diff", "--name-only", "-z", "--diff-filter=A", "--", str(repo_prefix)],
-        capture_output=True,
-        check=True,
-    )
-    if intent.stdout:
-        raise ValueError("intent-to-add entries cannot be staged as a plugin payload")
     entries: list[tuple[str, Path]] = []
     for entry in result.stdout.decode().split("\0"):
         if not entry:
@@ -83,6 +77,15 @@ def _index_entries(repo_prefix: Path) -> list[tuple[str, Path]]:
     return entries
 
 
+def _intent_to_add_paths(repo_prefix: Path) -> set[Path]:
+    intent = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "diff", "--name-only", "-z", "--diff-filter=A", "--", str(repo_prefix)],
+        capture_output=True,
+        check=True,
+    )
+    return {Path(path) for path in intent.stdout.decode().split("\0") if path}
+
+
 def _tracked_paths(plugin_name: str, package_format: str) -> list[Path]:
     _plugin_root(plugin_name)
     try:
@@ -92,10 +95,13 @@ def _tracked_paths(plugin_name: str, package_format: str) -> list[Path]:
         raise ValueError(f"unsupported package format {package_format!r}; choose one of {choices}") from exc
 
     plugin_prefix = Path("plugins") / plugin_name
+    intent_paths = _intent_to_add_paths(plugin_prefix)
     tracked_paths: list[Path] = []
     for _mode, repo_path in _index_entries(plugin_prefix):
         relative_path = repo_path.relative_to(plugin_prefix)
         if any(relative_path == root or root in relative_path.parents for root in shipped_paths):
+            if repo_path in intent_paths:
+                raise ValueError(f"intent-to-add entry cannot be staged as a plugin payload: {repo_path}")
             tracked_paths.append(relative_path)
     required = Path("plugin.json") if package_format == "portable" else Path(".codex-plugin/plugin.json")
     if required not in tracked_paths:
@@ -104,9 +110,16 @@ def _tracked_paths(plugin_name: str, package_format: str) -> list[Path]:
 
 
 def _tracked_public_package_py_paths() -> list[Path]:
+    intent_paths = _intent_to_add_paths(PUBLIC_PACKAGE_REPO_PREFIX)
     repo_paths = [
-        repo_path for _mode, repo_path in _index_entries(PUBLIC_PACKAGE_REPO_PREFIX) if repo_path.suffix == ".py"
+        repo_path
+        for _mode, repo_path in _index_entries(PUBLIC_PACKAGE_REPO_PREFIX)
+        if repo_path.suffix == ".py"
     ]
+    if intent_paths.intersection(repo_paths):
+        raise ValueError("intent-to-add entries cannot be staged as public GEPA Omni package files")
+    if not repo_paths:
+        raise FileNotFoundError(f"public GEPA Omni package has no staged .py files under {PUBLIC_PACKAGE_REPO_PREFIX}")
     if PUBLIC_PACKAGE_REPO_PREFIX / "__init__.py" not in repo_paths:
         raise ValueError("public GEPA Omni package has no indexed __init__.py")
     return sorted(repo_paths)
@@ -121,6 +134,9 @@ def _write_blob_from_index(repo_path: Path, target: Path) -> None:
     if show.returncode != 0:
         detail = show.stderr.decode(errors="replace").strip()
         raise RuntimeError(f"could not read indexed file {repo_path}: {detail}")
+    worktree_file = REPO_ROOT / repo_path
+    if not show.stdout and worktree_file.is_file() and worktree_file.stat().st_size:
+        raise RuntimeError(f"index entry for {repo_path} is empty but the working tree file is not (intent-to-add?)")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(show.stdout)
 
@@ -147,10 +163,14 @@ def stage(
     _tracked_public_package_py_paths()
     destination.mkdir(parents=True, exist_ok=True)
 
-    plugin_prefix = plugin_root.relative_to(REPO_ROOT)
-    for relative_path in tracked_paths:
-        _write_blob_from_index(plugin_prefix / relative_path, destination / relative_path)
-    _stage_public_package(destination)
+    try:
+        plugin_prefix = plugin_root.relative_to(REPO_ROOT)
+        for relative_path in tracked_paths:
+            _write_blob_from_index(plugin_prefix / relative_path, destination / relative_path)
+        _stage_public_package(destination)
+    except BaseException:
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
     return destination
 
 

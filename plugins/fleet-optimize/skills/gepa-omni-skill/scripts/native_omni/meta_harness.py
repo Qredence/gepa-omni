@@ -50,6 +50,8 @@ class MetaHarnessConfig:
     def __post_init__(self) -> None:
         backend = None if self.agent_backend is None else str(self.agent_backend).strip().lower()
         profile = None if self.runner_profile is None else str(self.runner_profile).strip().lower()
+        backend = "codex" if backend == "default" else backend
+        profile = "codex" if profile == "default" else profile
         if backend is not None and profile is not None and backend != profile:
             raise ValueError("agent_backend conflicts with runner_profile; set only one")
         self.agent_backend = backend or profile or "codex"
@@ -70,7 +72,7 @@ class MetaHarnessConfig:
 def _config(config: Any = None, **kwargs: Any) -> MetaHarnessConfig:
     values: dict[str, Any] = {
         "model": None,
-        "agent_backend": "codex",
+        "agent_backend": None,
         "codex_command": "codex",
         "pi_command": "pi",
         "claude_command": "claude",

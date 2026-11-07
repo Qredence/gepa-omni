@@ -315,6 +315,11 @@ def _standalone_auto(
             api_key_env=api_key_env,
         )
 
+    if config.continuation_engine in {"autoresearch", "meta_harness"}:
+        raise ValueError(
+            "standalone external agent runners cannot enforce endpoint pinning; use the plugin native runtime"
+        )
+
     endpoint = resolve_endpoint(
         base_url=base_url or config.base_url,
         model=config.model,

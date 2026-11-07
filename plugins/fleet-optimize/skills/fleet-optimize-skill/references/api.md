@@ -32,7 +32,10 @@ engine and reflection option mappings:
 
 Pass `sampling_strategy` or `selection_strategy` to replace those defaults.
 Additional `engine_config` and `reflection_config` mappings are merged without
-modifying the caller's dictionaries.
+modifying the caller's dictionaries. Within those nested blocks, explicit
+`engine_config` keys such as `max_workers`, `sampling_strategy`, and
+`selection_strategy` override helper-derived defaults. Top-level
+`max_concurrency` still configures the shared evaluator server independently.
 
 ## `optimize`
 
@@ -83,5 +86,4 @@ The compatibility gate requires the latest engine-pluggable surface:
 If any required symbol is missing, install the newest upstream package or Git
 revision and rerun preflight. No old API fallback is attempted.
 
-Explicit keys in `engine_config` and `reflection_config` override helper defaults.
 Engine worker overrides do not override the shared server’s top-level `max_concurrency`.

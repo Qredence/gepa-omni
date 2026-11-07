@@ -312,46 +312,55 @@ class NativeRunnerTests(unittest.TestCase):
         self.assertEqual(outcomes.count("success"), 2)
         self.assertEqual(outcomes.count("CodexTokenBudgetExceeded"), 1)
 
+    def test_reused_raw_artifact_removed_on_success_and_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir) / "work"
+            directory.mkdir()
+            artifact = directory / "chat_completion_response.json"
+            with patch.dict(os.environ, {}, clear=True):
+                for failure in (False, True):
+                    artifact.write_text("sensitive")
+
+                    def opener(*args, **kwargs):
+                        if failure:
+                            raise OSError("failure")
+                        return FakeResponse()
+
+                    runner = OpenAIChatCompletionRunner(
+                        base_url="http://localhost/v1", model="model", api_key="key", opener=opener
+                    )
+                    if failure:
+                        with self.assertRaises(AgentProcessError):
+                            runner.run("prompt", work_dir=directory)
+                    else:
+                        runner.run("prompt", work_dir=directory)
+                    self.assertFalse(artifact.exists())
+
+    def test_provider_error_details_are_bounded_and_redacted(self):
+        import io
+        import urllib.error
+
+        long_detail = b'{"api_key":"secret", "error":"invalid model ' + b"x" * 2000 + b'"}'
+        errors = (
+            urllib.error.HTTPError("http://localhost/v1", 400, "bad request", {}, io.BytesIO(long_detail)),
+            urllib.error.URLError("TLS verification failed secret"),
+        )
+        with patch.dict(os.environ, {}, clear=True):
+            for index, error in enumerate(errors):
+                def opener(*args, **kwargs):
+                    raise error
+
+                client = OpenAIChatCompletionsClient(
+                    base_url="http://localhost/v1", model="model", api_key="secret", opener=opener
+                )
+                with self.assertRaises(ChatCompletionError) as raised:
+                    client.complete([{"role": "user", "content": "prompt"}])
+                message = str(raised.exception)
+                self.assertNotIn("secret", message)
+                self.assertLessEqual(len(message), 600)
+                if index == 0:
+                    self.assertIn("invalid model", message)
+
 
 if __name__ == "__main__":
     unittest.main()
-
-
-def test_reused_raw_artifact_removed_on_success_and_failure(tmp_path):
-    import pytest
-    directory = tmp_path / "work"
-    directory.mkdir()
-    artifact = directory / "chat_completion_response.json"
-    with patch.dict(os.environ, {}, clear=True):
-        for failure in (False, True):
-            artifact.write_text("sensitive")
-            def opener(*args, **kwargs):
-                if failure:
-                    raise OSError("failure")
-                return FakeResponse()
-            runner = OpenAIChatCompletionRunner(base_url="http://localhost/v1", model="model", api_key="key", opener=opener)
-            if failure:
-                with pytest.raises(AgentProcessError):
-                    runner.run("prompt", work_dir=directory)
-            else:
-                runner.run("prompt", work_dir=directory)
-            assert not artifact.exists()
-
-
-def test_provider_error_details_are_bounded_and_redacted():
-    import io
-    import urllib.error
-    import pytest
-    with patch.dict(os.environ, {}, clear=True):
-        for error in (
-            urllib.error.HTTPError("http://localhost/v1", 400, "bad request", {}, io.BytesIO(b'{"api_key":"secret", "error":"invalid model"}')),
-            urllib.error.URLError("TLS verification failed secret"),
-        ):
-            def opener(*args, **kwargs):
-                raise error
-            client = OpenAIChatCompletionsClient(base_url="http://localhost/v1", model="model", api_key="secret", opener=opener)
-            with pytest.raises(ChatCompletionError) as raised:
-                client.complete([{"role": "user", "content": "prompt"}])
-            message = str(raised.value)
-            assert "secret" not in message
-            assert "invalid model" in message or "TLS verification failed" in message

@@ -74,6 +74,8 @@ def main() -> None:
     train = benchmark.get("train", TRAIN)
     validation = benchmark.get("validation", VALIDATION)
     test = benchmark.get("test", TEST)
+    if not train or not validation or not test:
+        parser.error("train, validation, and test splits must be non-empty")
     objective = benchmark.get(
         "objective",
         (
@@ -84,6 +86,8 @@ def main() -> None:
     )
     if args.report_concurrency < 1:
         parser.error("--report-concurrency must be positive")
+    if args.max_evals <= 0:
+        parser.error("--max-evals must be positive")
     if args.env_file:
         load_dotenv(args.env_file, override=False)
     endpoint = resolve_endpoint()
@@ -103,11 +107,11 @@ def main() -> None:
     lock = threading.Lock()
 
     def metered_opener(kind):
-        def open_request(request, timeout=120):
-            with opener(request, timeout=timeout) as response:
+        def open_request(request, timeout=120, **kwargs):
+            with opener(request, timeout=timeout, **kwargs) as response:
                 raw = response.read()
             payload = json.loads(raw)
-            usage = payload.get("usage", {})
+            usage = payload.get("usage") or {}
             row = {"phase": phase, "kind": kind, "usage": usage, "model": payload.get("model")}
             with lock:
                 usage_rows.append(row)
@@ -129,7 +133,6 @@ def main() -> None:
                 ]
             )
             .final_text.strip()
-            .lower()
         )
         score = float(answer == expected and answer in LABELS)
         feedback = {
@@ -193,10 +196,10 @@ def main() -> None:
     optimized_test = accuracy(result.best_candidate, test)
     totals = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "estimated_usd": 0.0}
     for row in usage_rows:
-        usage = row["usage"]
-        inputs = usage.get("prompt_tokens", 0)
-        cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
-        outputs = usage.get("completion_tokens", 0)
+        usage = row["usage"] or {}
+        inputs = usage.get("prompt_tokens") or 0
+        cached = ((usage.get("prompt_tokens_details") or {}).get("cached_tokens")) or 0
+        outputs = usage.get("completion_tokens") or 0
         cost = (
             (inputs - cached) * args.input_per_million
             + cached * args.cached_input_per_million

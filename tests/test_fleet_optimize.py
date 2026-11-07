@@ -258,5 +258,7 @@ def test_supplied_config_without_output_directory_gets_external_default(tmp_path
     config = replace(config, output_dir=None)
     validated = fleet_optimize._validate_config(config, fleet_optimize._load_surface())
     assert validated.output_dir is not None
-    assert Path(validated.output_dir).is_absolute()
-    assert Path.cwd() not in Path(validated.output_dir).parents
+    output_path = Path(validated.output_dir)
+    assert output_path.is_absolute()
+    assert output_path != Path.cwd()
+    assert Path.cwd() not in output_path.parents

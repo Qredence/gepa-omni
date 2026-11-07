@@ -42,8 +42,13 @@ def test_provenance_negative_fixtures(tmp_path, monkeypatch):
     source.write_text(commit)
     checker.NOTICE_PATH.unlink()
     checker.SKILL_PATH.unlink()
-    assert len(checker.check()) == 2
+    errors = checker.check()
+    assert len(errors) == 2
+    assert any("NOTICE.md" in error for error in errors)
+    assert any("SKILL.md" in error for error in errors)
     checker.PROVENANCE_PATH.write_text("{")
-    assert checker.check()
+    errors = checker.check()
+    assert len(errors) == 1 and "could not read" in errors[0]
     checker.PROVENANCE_PATH.unlink()
-    assert checker.check()
+    errors = checker.check()
+    assert len(errors) == 1 and "could not read" in errors[0]

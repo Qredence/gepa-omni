@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import socket
 from pathlib import Path
 from types import ModuleType
 from unittest.mock import patch
@@ -24,6 +25,11 @@ def _load_preflight() -> ModuleType:
 @pytest.fixture
 def preflight() -> ModuleType:
     return _load_preflight()
+
+
+@pytest.fixture(autouse=True)
+def resolvable_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *args, **kwargs: [(0, 0, 0, "", ("8.8.8.8", 443))])
 
 
 def _set_provider_environment(monkeypatch: pytest.MonkeyPatch, *, omit: tuple[str, ...] = ()) -> None:

@@ -82,7 +82,8 @@ def _resolve_config_class(api_module: ModuleType, optimize_anything: Callable[..
                 return config_candidate
     raise FleetOptimizeCompatibilityError(
         "Installed GEPA does not expose a current engine-pluggable config with "
-        "engine, max_evals, max_concurrency, and engine_config fields. "
+        "engine, max_evals, max_token_cost, max_concurrency, output_dir, run_dir, "
+        "stop_at_score, and engine_config fields. "
         "Install the latest upstream GEPA."
     )
 

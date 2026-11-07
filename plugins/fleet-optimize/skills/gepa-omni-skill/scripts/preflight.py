@@ -72,11 +72,12 @@ def _check_chat_completions_config() -> bool:
         resolve_endpoint(environ=os.environ)
     except ValueError as exc:
         check("Chat Completions endpoint security policy", False, str(exc))
-        check(
-            "approved endpoint API key is configured",
-            False,
-            "configure OPENAI_API_KEY for api.openai.com; otherwise configure GEPA_OMNI_API_KEY or set GEPA_OMNI_API_KEY_ENV to the name of a provider-key environment variable; do not provide it in chat",
-        )
+        if "missing endpoint API key" in str(exc):
+            check(
+                "approved endpoint API key is configured",
+                False,
+                "configure OPENAI_API_KEY for api.openai.com; otherwise configure GEPA_OMNI_API_KEY or set GEPA_OMNI_API_KEY_ENV to the name of a provider-key environment variable; do not provide it in chat",
+            )
         return False
     check("approved endpoint API key is configured", True, "configured through the environment")
     check("Chat Completions endpoint security policy", True, "validated")

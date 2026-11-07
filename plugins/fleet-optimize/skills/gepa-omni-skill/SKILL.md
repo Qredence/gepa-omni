@@ -47,6 +47,9 @@ Choose one of three strategies:
 `auto` evaluates the seed, pilots eligible engines, compares improvement per
 evaluation, and gives the remaining budget to the strongest
 engine or engines. Small budgets fall back to standalone GEPA.
+`max_token_cost` below 4.0 falls back to GEPA, whether or not `max_evals` is set.
+`max_token_cost` splits the budget across pilots and continuation; it does not
+change the ranking.
 `omni` is not the default and requires enough budget for its fixed phases.
 
 Keep `test_set` untouched until final reporting. `dataset` and `valset` may be
@@ -89,7 +92,9 @@ stochastic systems, average several samples inside the evaluator rather than
 selecting a lucky one.
 
 The direct upstream launcher is also available when only standalone GEPA is
-needed:
+needed. It bypasses `resolve_endpoint` and its credential safeguards, so use it
+only with the official OpenAI endpoint. For other providers, use the guarded
+`gepa_omni` API with `strategy="gepa"`:
 
 ```python
 import os

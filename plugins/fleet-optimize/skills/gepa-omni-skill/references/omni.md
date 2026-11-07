@@ -33,7 +33,7 @@ result = optimize(
 The fixed strategy requires enough budget for three positive exploration
 slices and a positive continuation slice. Use `strategy="auto"` for small or
 uncertain budgets; it pilots eligible engines and gives the remainder to the
-best improvement-per-cost option.
+best improvement-per-evaluation option.
 
 Keep run artifacts in private absolute directories outside the checkout. The
 package records strategy, pilot, continuation, evaluation, and held-out

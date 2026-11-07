@@ -112,6 +112,8 @@ def _validate_url(base_url: str, *, allow_private: bool) -> tuple[str, str, bool
         raise EndpointPolicyError("endpoint hostname could not be resolved") from exc
     if not addresses:
         raise EndpointPolicyError("endpoint hostname resolved to no addresses")
+    if is_loopback and any(not ipaddress.ip_address(address).is_loopback for address in addresses):
+        raise EndpointPolicyError("loopback endpoint hostname resolved to a non-loopback address")
     if not allow_private and not is_loopback and any(_host_is_private(address) for address in addresses):
         raise EndpointPolicyError("endpoint resolves to a private or non-public address; explicit opt-in is required")
     sanitized = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))

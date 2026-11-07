@@ -43,6 +43,8 @@ class BestOfNConfig:
     def __post_init__(self) -> None:
         backend = None if self.agent_backend is None else str(self.agent_backend).strip().lower()
         profile = None if self.runner_profile is None else str(self.runner_profile).strip().lower()
+        backend = "codex" if backend == "default" else backend
+        profile = "codex" if profile == "default" else profile
         if backend is not None and profile is not None and backend != profile:
             raise ValueError(
                 f"best_of_n agent_backend {backend!r} conflicts with runner_profile {profile!r}; set only one"

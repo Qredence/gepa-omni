@@ -39,11 +39,15 @@ class OmniBudgetError(ValueError):
 def _resolve_runner_profile(runner_profile: str | None, agent_backend: str | None) -> str:
     """Resolve the renamed profile field while accepting one legacy alias."""
 
-    if runner_profile not in {None, "default"} and agent_backend is not None and runner_profile != agent_backend:
+    profile = None if runner_profile is None else str(runner_profile).strip().lower()
+    backend = None if agent_backend is None else str(agent_backend).strip().lower()
+    if profile == "default":
+        profile = "codex"
+    if backend == "default":
+        backend = "codex"
+    if profile is not None and backend is not None and profile != backend:
         raise ValueError("agent_backend conflicts with runner_profile")
-    selected = agent_backend or runner_profile or "codex"
-    if selected == "default":
-        selected = "codex"
+    selected = backend or profile or "codex"
     if selected not in RUNNER_PROFILES:
         raise ValueError(f"unsupported runner_profile {selected!r}; choose " + ", ".join(RUNNER_PROFILES))
     return selected
@@ -834,7 +838,9 @@ def _run_auto(
         ralph=ralph,
     )
     total_continuation_evals = int(getattr(result, "total_evals", 0))
-    if float(winning_result.best_score) > float(result.best_score):
+    continuation_metadata = getattr(result, "metadata", None)
+    continuation_unscored = isinstance(continuation_metadata, dict) and continuation_metadata.get("scored") is False
+    if continuation_unscored or float(winning_result.best_score) > float(result.best_score):
         result = (
             replace(winning_result, total_evals=total_continuation_evals, metadata=dict(winning_result.metadata))
             if is_dataclass(winning_result)

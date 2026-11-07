@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import socket
+from threading import local
 import urllib.error
 import urllib.request
 from typing import Any
@@ -14,8 +15,11 @@ from .security import EndpointConfiguration
 def pinned_urlopen(endpoint: EndpointConfiguration):
     """Keep the URL hostname for Host/TLS, using only approved numeric peers."""
 
+    timeouts = local()
+    timeouts.read = 600
+
     class HTTPConnection(http.client.HTTPConnection):
-        def connect(self):
+        def _connect_socket(self):
             failure = None
             for address in endpoint.addresses:
                 try:
@@ -25,10 +29,15 @@ def pinned_urlopen(endpoint: EndpointConfiguration):
                     failure = exc
             raise OSError("no validated endpoint address could be reached") from failure
 
+        def connect(self):
+            self._connect_socket()
+            self.sock.settimeout(timeouts.read)
+
     class HTTPSConnection(http.client.HTTPSConnection):
         def connect(self):
-            HTTPConnection.connect(self)
+            HTTPConnection._connect_socket(self)
             self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+            self.sock.settimeout(timeouts.read)
 
     class HTTPHandler(urllib.request.HTTPHandler):
         def http_open(self, req):
@@ -46,11 +55,14 @@ def pinned_urlopen(endpoint: EndpointConfiguration):
         urllib.request.ProxyHandler({}), HTTPHandler(), HTTPSHandler(), RejectRedirects()
     )
 
-    def open_request(request, timeout=600):
+    def open_request(request, timeout=600, *, read_timeout=600):
         from urllib.parse import urlsplit
 
-        if urlsplit(request.full_url).netloc != urlsplit(endpoint.base_url).netloc:
-            raise ValueError("request authority differs from the validated endpoint")
+        endpoint_url = urlsplit(endpoint.base_url)
+        request_url = urlsplit(request.full_url)
+        if request_url.scheme != endpoint_url.scheme or request_url.netloc != endpoint_url.netloc:
+            raise ValueError("request scheme or authority differs from the validated endpoint")
+        timeouts.read = read_timeout
         return opener.open(request, timeout=timeout)
 
     return open_request
@@ -68,9 +80,11 @@ def pinned_openai_client(endpoint: EndpointConfiguration) -> Any:
             req = urllib.request.Request(
                 str(request.url), data=request.read(), headers=dict(request.headers), method=request.method
             )
-            timeout = request.extensions.get("timeout", {}).get("read") or 600
+            timeouts = request.extensions.get("timeout", {})
+            connect_timeout = timeouts.get("connect") or 600
+            read_timeout = timeouts.get("read") or 600
             try:
-                response = open_request(req, timeout=timeout)
+                response = open_request(req, timeout=connect_timeout, read_timeout=read_timeout)
             except urllib.error.HTTPError as exc:
                 response = exc
             with response:
