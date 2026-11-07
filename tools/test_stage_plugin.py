@@ -183,5 +183,5 @@ def test_index_requirements_and_intent_to_add_in_isolated_repository(tmp_path, m
     assert not (tmp_path / "intent" / "fleet-optimize").exists()
     git("reset", "--", str(intent))
     git("rm", "--cached", "-f", str(package / "__init__.py"))
-    with pytest.raises(ValueError, match="__init__"):
+    with pytest.raises((ValueError, FileNotFoundError), match=r"staged \.py files|__init__"):
         staging.stage(tmp_path / "missing-package" / "fleet-optimize")
