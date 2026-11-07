@@ -1,0 +1,48 @@
+plugins/fleet-optimize/skills/gepa-omni-skill/references/gotchas.md
+  s_bb7d6637d80d4b::t_54d31d78e6ec1b 31,37,47,59,102,112,116,118,121-122
+examples/README.md
+  s_bb7d6637d80d4b::t_2abc9ddb5a15e3 27
+  s_bb7d6637d80d4b::t_348a52c53df963 28-30,44
+plugins/fleet-optimize/skills/gepa-omni-skill/references/pi.md
+  s_bb7d6637d80d4b::t_3a689a5f891692 48-49,51
+packages/gepa-omni/README.md
+  s_bb7d6637d80d4b::t_53ade7d356b484 1,3-68
+plugins/fleet-optimize/skills/gepa-omni-skill/references/tracking.md
+  s_bb7d6637d80d4b::t_4ec860fd6876d5 9-11
+plugins/fleet-optimize/skills/gepa-omni-skill/references/codex.md
+  s_bb7d6637d80d4b::t_17a32535c736a1 30,36-37
+  s_bb7d6637d80d4b::t_7f8bd7552cd466 48,87
+  s_bb7d6637d80d4b::t_8def820e377f57 77,80-81
+plugins/fleet-optimize/skills/gepa-omni-skill/references/writing_evaluators.md
+  s_bb7d6637d80d4b::t_d1f12c09c83b23 41-51,104-111
+  s_bb7d6637d80d4b::t_2f4c6bee4f63f6 3-8
+CONTRIBUTING.md
+  s_bb7d6637d80d4b::t_e1cadde78669b4 3-7,51-52,68-73
+PRIVACY.md
+  s_bb7d6637d80d4b::t_5ca535ac0e7a0f 12-16
+  s_bb7d6637d80d4b::t_6b13d8cbfc805a 7-11,18-31
+plugins/fleet-optimize/skills/fleet-optimize-skill/references/api.md
+  s_bb7d6637d80d4b::t_177a14e45efdfd 73,76
+README.md
+  s_bb7d6637d80d4b::t_ad37ad3753f91d 3-5,7-11,13-18,20,22,41-44,46,48-50,53,56,58-59,61-69,71-73,75,77,79-80,82-86,88-96,99-100,121-123,125-126,128,130-131,143-148,150-152,160-162,164-165,170-173,176-185,230-254,256,258-261
+  s_bb7d6637d80d4b::t_d7564529b9242a 98,174-175
+  s_bb7d6637d80d4b::t_a3c96bf74d579b 163,166-169
+  s_bb7d6637d80d4b::t_aeb1ffad1b868f 186-190,193,196
+  s_bb7d6637d80d4b::t_ee9b1500fbf73f 208-218,221,224-229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b50f2068271d5cf8b3ead992fae49f9eb3896961",
+  "prompts": {},
+  "sessions": {
+    "s_bb7d6637d80d4b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b44d-7ada-70d2-a12a-a22be35e0ee3",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
