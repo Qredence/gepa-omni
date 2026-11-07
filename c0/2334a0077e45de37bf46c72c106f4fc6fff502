@@ -1,0 +1,19 @@
+tests/test_native_runners.py
+  s_729035695476ae::t_4086e56d9a25c1 363-364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c02334a0077e45de37bf46c72c106f4fc6fff502",
+  "prompts": {},
+  "sessions": {
+    "s_729035695476ae": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b40d-9da1-7701-9e3d-784c1fa1bd11",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
