@@ -134,9 +134,6 @@ def _write_blob_from_index(repo_path: Path, target: Path) -> None:
     if show.returncode != 0:
         detail = show.stderr.decode(errors="replace").strip()
         raise RuntimeError(f"could not read indexed file {repo_path}: {detail}")
-    worktree_file = REPO_ROOT / repo_path
-    if not show.stdout and worktree_file.is_file() and worktree_file.stat().st_size:
-        raise RuntimeError(f"index entry for {repo_path} is empty but the working tree file is not (intent-to-add?)")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(show.stdout)
 

@@ -121,7 +121,7 @@ class PreflightTests(unittest.TestCase):
         self.assertNotIn("CLI authentication", text)
         self.assertIn("All preflight checks passed", text)
 
-    def test_missing_chat_completions_configuration_fails_with_variable_names(self) -> None:
+    def test_missing_endpoint_configuration_does_not_claim_api_key_is_missing(self) -> None:
         output = io.StringIO()
         with patch.dict(sys.modules, fake_gepa_modules()), redirect_stdout(output):
             result = preflight.main(["--engine", "autoresearch"])
@@ -130,7 +130,7 @@ class PreflightTests(unittest.TestCase):
         text = output.getvalue()
         self.assertIn("OPENAI_BASE_URL", text)
         self.assertIn("OPENAI_MODEL", text)
-        self.assertIn("OPENAI_API_KEY", text)
+        self.assertNotIn("OPENAI_API_KEY", text)
 
     def test_missing_api_key_remediation_is_secret_safe(self) -> None:
         self._configure_api()
