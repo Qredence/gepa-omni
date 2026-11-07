@@ -360,6 +360,8 @@ class NativeRunnerTests(unittest.TestCase):
                 self.assertLessEqual(len(message), 600)
                 if index == 0:
                     self.assertIn("invalid model", message)
+                else:
+                    self.assertIn("TLS verification failed", message)
 
 
 if __name__ == "__main__":
