@@ -1,0 +1,74 @@
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/meta_harness.py
+  s_729035695476ae::t_afff19879e4377 53-54,75
+docs/pr18-review-dispositions.md
+  s_729035695476ae::t_7f433641dd5c46 47,51,54,57-58,63,73-74,78-79,81
+  s_729035695476ae::t_dae8695bdf92e5 70-72,75-77,82
+  s_729035695476ae::t_bb45c03b9f78a8 38,40,65,67-68
+examples/optimize_support_prompt.py
+  s_729035695476ae::t_b6ca9ae3341b19 77-78,89-90
+  s_729035695476ae::t_afff19879e4377 110-111
+  s_729035695476ae::t_447d0d5dcdffe7 114,199-202
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/autoresearch.py
+  s_729035695476ae::t_afff19879e4377 57-58
+packages/gepa-omni/src/gepa_omni/api.py
+  s_729035695476ae::t_447d0d5dcdffe7 318-322
+plugins/fleet-optimize/skills/fleet-optimize-skill/references/api.md
+  s_729035695476ae::t_9bd9a24a7e5daa 35-38
+tools/stage_plugin.py
+  s_729035695476ae::t_afa05a16f057c2 80-88,98,103-104,113,115-117,119-120
+  s_729035695476ae::t_4fd7f99b4c59ba 7,121-122,137-139,166-173
+tests/test_fleet_optimize.py
+  s_729035695476ae::t_b6ca9ae3341b19 261-264
+tools/test_gepa_omni_provenance.py
+  s_729035695476ae::t_b6ca9ae3341b19 45-48,50-51,53-54
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/best_of_n.py
+  s_729035695476ae::t_afff19879e4377 46-47
+tests/test_native_runners.py
+  s_729035695476ae::t_c327286539617e 343,349,361-362
+  s_729035695476ae::t_8e69f35363eac2 315-341,344-348,350-351,353-360,365-366
+  s_729035695476ae::t_9a78c6add72f34 342
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/preflight.py
+  s_729035695476ae::t_b6ca9ae3341b19 75-80
+packages/gepa-omni/src/gepa_omni/transport.py
+  s_729035695476ae::t_944637cfb6c1fc 22,32-35,38,40
+  s_729035695476ae::t_c53186e8482726 7,18-19,65
+  s_729035695476ae::t_2683ab029e4791 58,87
+  s_729035695476ae::t_91d8a5d0f8b340 20
+  s_729035695476ae::t_4fd7f99b4c59ba 61-64,83-85
+plugins/fleet-optimize/skills/fleet-optimize-skill/SKILL.md
+  s_729035695476ae::t_447d0d5dcdffe7 34-40
+plugins/fleet-optimize/skills/fleet-optimize-skill/scripts/fleet_optimize.py
+  s_729035695476ae::t_447d0d5dcdffe7 85-86
+tools/gepa_self_evaluate.py
+  s_729035695476ae::t_b6ca9ae3341b19 553
+  s_729035695476ae::t_447d0d5dcdffe7 310-313,315,503
+plugins/fleet-optimize/skills/gepa-omni-skill/references/omni.md
+  s_729035695476ae::t_447d0d5dcdffe7 36
+plugins/fleet-optimize/skills/gepa-omni-skill/SKILL.md
+  s_729035695476ae::t_447d0d5dcdffe7 51-52,95-97
+  s_729035695476ae::t_814a01ddf470aa 50
+plugins/fleet-optimize/tests/test_fleet_preflight.py
+  s_729035695476ae::t_b6ca9ae3341b19 5,30-31
+  s_729035695476ae::t_99742127973132 32
+  s_729035695476ae::t_28932b2930d6e2 33-34
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/omni_pipeline.py
+  s_729035695476ae::t_447d0d5dcdffe7 42-48,50,841-843
+packages/gepa-omni/src/gepa_omni/security.py
+  s_729035695476ae::t_4fd7f99b4c59ba 115-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "654221df4edf755f9ecd045c95c7d601929386ea",
+  "prompts": {},
+  "sessions": {
+    "s_729035695476ae": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b40d-9da1-7701-9e3d-784c1fa1bd11",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
