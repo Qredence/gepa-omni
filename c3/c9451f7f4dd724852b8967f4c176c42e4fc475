@@ -1,0 +1,128 @@
+tests/test_gepa_omni_benchmark.py
+  s_0e5564b0843879::t_e99f63638afa43 42-46
+plugins/fleet-optimize/skills/fleet-optimize-skill/references/parallel-proposals.md
+  s_0e5564b0843879::t_e99f63638afa43 10
+plugins/fleet-optimize/skills/fleet-optimize-skill/SKILL.md
+  s_0e5564b0843879::t_e99f63638afa43 75-80,177-179,194-197
+  s_0e5564b0843879::t_b9107eb884c02d 37
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/core.py
+  s_0e5564b0843879::t_e35e3d7804fefb 448
+tools/test_gepa_omni_provenance.py
+  s_0e5564b0843879::t_899cb4a4291ca1 8-16,21
+  s_0e5564b0843879::t_a3b93d39de39b1 17-20,22-49
+tests/test_preflight.py
+  s_0e5564b0843879::t_e99f63638afa43 169
+  s_0e5564b0843879::t_1c364f6be967b9 239-250
+PRIVACY.md
+  s_0e5564b0843879::t_e35e3d7804fefb 10-12
+examples/optimize_support_prompt.py
+  s_0e5564b0843879::t_ecdae391344d50 1-23,25-147,151-165,167-168,170,174-187,189-190,192,194-244
+  s_0e5564b0843879::t_16eefe1774f3c9 24
+  s_0e5564b0843879::t_71a5ca309ef975 148-150,166,169,171-173,188,191,193
+examples/README.md
+  s_0e5564b0843879::t_48c1a60c0d747a 106-124
+  s_0e5564b0843879::t_64819a93167933 61-78
+  s_0e5564b0843879::t_3256933a9a23f6 1-60,79-105
+tools/check_gepa_omni_provenance.py
+  s_0e5564b0843879::t_dc4e823078ba8f 25-26,52-53,55-56
+  s_0e5564b0843879::t_e31732a98024d2 22,42-49,54
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/autoresearch.py
+  s_0e5564b0843879::t_e35e3d7804fefb 36,55-59
+plugins/fleet-optimize/skills/fleet-optimize-skill/scripts/preflight.py
+  s_0e5564b0843879::t_e31732a98024d2 8-9,43-51
+  s_0e5564b0843879::t_e99f63638afa43 42
+  s_0e5564b0843879::t_e5dae9f7df7c01 52
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/chat_completions.py
+  s_0e5564b0843879::t_535348c3fc752a 146-148
+  s_0e5564b0843879::t_e35e3d7804fefb 209-215
+  s_0e5564b0843879::t_b92d6778788540 217-219
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/omni_pipeline.py
+  s_0e5564b0843879::t_b92d6778788540 39,42-44,700-701,703,713-715,801-803,806,836-853,882,991,1140,1144,1175-1178,1217-1218
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/preflight.py
+  s_0e5564b0843879::t_e31732a98024d2 25,69-77,79-83
+  s_0e5564b0843879::t_e99f63638afa43 78
+tools/stage_plugin.py
+  s_0e5564b0843879::t_e31732a98024d2 68-74,100-102,110-111,146-147,151
+tests/test_native_core.py
+  s_0e5564b0843879::t_e99f63638afa43 105-107,228,230,239
+tests/test_omni_pipeline.py
+  s_0e5564b0843879::t_e99f63638afa43 729,741-742
+tools/test_stage_plugin.py
+  s_0e5564b0843879::t_08b97c798e373e 147-172,174-184,186-187
+  s_0e5564b0843879::t_4ae2c0c4bd1a70 173,185
+tests/test_fleet_optimize.py
+  s_0e5564b0843879::t_e99f63638afa43 226,239
+  s_0e5564b0843879::t_70a41093a6ea8f 254-262
+plugins/fleet-optimize/skills/gepa-omni-skill/SKILL.md
+  s_0e5564b0843879::t_e99f63638afa43 48-49,95-96,110
+plugins/fleet-optimize/tests/test_fleet_preflight.py
+  s_0e5564b0843879::t_e99f63638afa43 34
+  s_0e5564b0843879::t_e7d2081a052a48 84-92
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/codex_agent_proposer.py
+  s_0e5564b0843879::t_dc4e823078ba8f 306
+packages/gepa-omni/src/gepa_omni/security.py
+  s_0e5564b0843879::t_e99f63638afa43 116
+  s_0e5564b0843879::t_dc4e823078ba8f 11,51,72,77-81,173-174,205
+  s_0e5564b0843879::t_535348c3fc752a 39-41,53,75,100-108,110-115,122,183,212
+  s_0e5564b0843879::t_e9d883e96d1bd4 171
+packages/gepa-omni/src/gepa_omni/api.py
+  s_0e5564b0843879::t_b92d6778788540 7-8,22-33,269-286,298-299,305,355,361-363,379,381-384,386,417,526-527
+  s_0e5564b0843879::t_535348c3fc752a 216-222,224,227,241,300-304
+  s_0e5564b0843879::t_dc4e823078ba8f 90-93,225-226
+tests/test_gepa_omni_package.py
+  s_0e5564b0843879::t_899cb4a4291ca1 153-166
+  s_0e5564b0843879::t_1e75b6c60400a8 452-492
+  s_0e5564b0843879::t_08b97c798e373e 424,435,447,523-534,536-552
+  s_0e5564b0843879::t_e99f63638afa43 22,335-336,338
+  s_0e5564b0843879::t_b20d291ed2f6e5 103,110,119,408-423,425-434,436-446,448-451,493-522,535
+tests/test_gepa_omni_documentation.py
+  s_0e5564b0843879::t_e99f63638afa43 9,33-34,36-37,40-43,59
+plugins/fleet-optimize/skills/fleet-optimize-skill/scripts/fleet_optimize.py
+  s_0e5564b0843879::t_b92d6778788540 48-56
+  s_0e5564b0843879::t_e35e3d7804fefb 292-294
+  s_0e5564b0843879::t_57f42c9d9dffaa 47,57-58,81,128
+tools/gepa_self_evaluate.py
+  s_0e5564b0843879::t_e35e3d7804fefb 308-310,312,549
+  s_0e5564b0843879::t_b92d6778788540 311
+packages/gepa-omni/src/gepa_omni/transport.py
+  s_0e5564b0843879::t_535348c3fc752a 1-83
+docs/pr18-review-dispositions.md
+  s_0e5564b0843879::t_53964d6ae9462f 90
+  s_0e5564b0843879::t_b199d426b9fa10 1-89,91-92
+packages/gepa-omni/src/gepa_omni/allocation.py
+  s_0e5564b0843879::t_b92d6778788540 5,8-10,29-30,38-47,49-58
+plugins/fleet-optimize/skills/fleet-optimize-skill/references/api.md
+  s_0e5564b0843879::t_e99f63638afa43 85-87
+tests/test_native_runners.py
+  s_0e5564b0843879::t_08b97c798e373e 318-357
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/runners.py
+  s_0e5564b0843879::t_e35e3d7804fefb 161-163,192,213
+packages/gepa-omni/src/gepa_omni/config.py
+  s_0e5564b0843879::t_e35e3d7804fefb 33,38-39
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/meta_harness.py
+  s_0e5564b0843879::t_e35e3d7804fefb 34,51-55
+examples/support_routing_hard.json
+  s_0e5564b0843879::t_dd451750131b3b 1-348
+plugins/fleet-optimize/skills/gepa-omni-skill/references/engines.md
+  s_0e5564b0843879::t_e87b12e31b42ee 22-26
+plugins/fleet-optimize/skills/gepa-omni-skill/references/security.md
+  s_0e5564b0843879::t_69e885d0fa123e 19-24
+tests/test_codex_agent_proposer.py
+  s_0e5564b0843879::t_3811a5849217e5 149,155,157-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c3c9451f7f4dd724852b8967f4c176c42e4fc475",
+  "prompts": {},
+  "sessions": {
+    "s_0e5564b0843879": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b370-28e4-7d32-97a3-59bd0ccbbdd1",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
