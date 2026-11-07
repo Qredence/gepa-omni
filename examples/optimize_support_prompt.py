@@ -125,15 +125,12 @@ def main() -> None:
 
     def evaluate(prompt, example):
         ticket, expected = example
-        answer = (
-            client.complete(
-                [
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": ticket},
-                ]
-            )
-            .final_text.strip()
-        )
+        answer = client.complete(
+            [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": ticket},
+            ]
+        ).final_text.strip()
         score = float(answer == expected and answer in LABELS)
         feedback = {
             "ticket": ticket,

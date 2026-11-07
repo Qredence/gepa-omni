@@ -112,9 +112,7 @@ def _tracked_paths(plugin_name: str, package_format: str) -> list[Path]:
 def _tracked_public_package_py_paths() -> list[Path]:
     intent_paths = _intent_to_add_paths(PUBLIC_PACKAGE_REPO_PREFIX)
     repo_paths = [
-        repo_path
-        for _mode, repo_path in _index_entries(PUBLIC_PACKAGE_REPO_PREFIX)
-        if repo_path.suffix == ".py"
+        repo_path for _mode, repo_path in _index_entries(PUBLIC_PACKAGE_REPO_PREFIX) if repo_path.suffix == ".py"
     ]
     if intent_paths.intersection(repo_paths):
         raise ValueError("intent-to-add entries cannot be staged as public GEPA Omni package files")
