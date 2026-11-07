@@ -1,0 +1,19 @@
+tools/test_stage_plugin.py
+  s_729035695476ae::t_c784f015aada20 186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "542a257c685013683509da3334b5a2d901bb5639",
+  "prompts": {},
+  "sessions": {
+    "s_729035695476ae": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b40d-9da1-7701-9e3d-784c1fa1bd11",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
