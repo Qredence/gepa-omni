@@ -1,0 +1,29 @@
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/autoresearch.py
+  s_98266a80d0426f::t_cbe7fca3093c99 112
+  s_98266a80d0426f::t_37d9a5f7c3c6d9 135-136
+packages/gepa-omni/src/gepa_omni/api.py
+  s_98266a80d0426f::t_077edba47fdb77 20
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/chat_completions.py
+  s_98266a80d0426f::t_b8aa2539b2a89e 32
+packages/gepa-omni/src/gepa_omni/transport.py
+  s_98266a80d0426f::t_36aa32cf4b2b59 11
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/preflight.py
+  s_98266a80d0426f::t_c7c9835204a749 237,243
+  s_98266a80d0426f::t_811fc2a5b29db2 309,312,316,320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2d9b246fde8ffb60b159e015fae36bf1a5ce6588",
+  "prompts": {},
+  "sessions": {
+    "s_98266a80d0426f": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "f8bf3765-33f8-4b2e-a113-ec7eb73bc9e3",
+        "model": "grok-4.7"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
