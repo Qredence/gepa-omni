@@ -1,0 +1,21 @@
+examples/optimize_support_prompt.py
+  s_729035695476ae::t_d249ea0762f3a0 128-133
+tools/stage_plugin.py
+  s_729035695476ae::t_1511d231eb6d53 115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "daa52b0d70b452c99bb33a86d9d38fd87be4a502",
+  "prompts": {},
+  "sessions": {
+    "s_729035695476ae": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b40d-9da1-7701-9e3d-784c1fa1bd11",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
