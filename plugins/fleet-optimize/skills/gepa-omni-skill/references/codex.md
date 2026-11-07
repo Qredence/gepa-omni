@@ -27,13 +27,14 @@ environment before launch.
 `CodexAgentProposer` implements:
 
 ```python
-proposer(
+def proposer(
     candidate,
     reflective_dataset,
     components_to_update,
     *,
     metadata=None,
-) -> dict[str, str]
+) -> dict[str, str]:
+    ...
 ```
 
 Each call creates a unique external diagnostics directory. Raw candidate,
@@ -44,7 +45,7 @@ usage, and validation errors. The request is a JSON Chat Completions call with
 `new_texts` with exactly the requested keys and string values.
 
 Pass `input_cost_per_million`, `output_cost_per_million`, and
-`max_token_cost` when a PyPI GEPA run is cost-bounded. `sandbox=False` is
+`max_token_cost` when an upstream GEPA run is cost-bounded. `sandbox=False` is
 rejected, and the plugin checkout is never used for proposal artifacts.
 
 ## Native agent runner
@@ -73,16 +74,16 @@ old subprocess class. The plugin pipeline does not construct it.
 
 ## Preflight
 
-Run preflight without making a model call:
+From the repository root, run preflight without making a model call:
 
 ```bash
-uv run python skills/gepa-omni-skill/scripts/preflight.py --engine codex
-uv run python skills/gepa-omni-skill/scripts/preflight.py \
+uv run python plugins/fleet-optimize/skills/gepa-omni-skill/scripts/preflight.py --engine codex
+uv run python plugins/fleet-optimize/skills/gepa-omni-skill/scripts/preflight.py \
   --engine autoresearch --agent-backend codex \
   --codex-input-cost-per-million 2 \
   --codex-output-cost-per-million 8
 ```
 
-Preflight validates the pinned PyPI GEPA API where relevant, the native
+Preflight validates the pinned upstream GEPA API where relevant, the native
 Chat Completions runner, and all three `OPENAI_*` variables. It does not send a
 prompt unless `--test-lm` is supplied.

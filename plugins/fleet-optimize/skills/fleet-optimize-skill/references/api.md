@@ -70,10 +70,10 @@ The native arguments are passed through unchanged:
 
 ## Compatibility
 
-Run:
+Set `PLUGIN_ROOT` to the installed plugin directory, then run the preflight:
 
 ```bash
-python3 skills/fleet-optimize-skill/scripts/preflight.py
+uv run python "$PLUGIN_ROOT/skills/fleet-optimize-skill/scripts/preflight.py"
 ```
 
 The compatibility gate requires the latest engine-pluggable surface:

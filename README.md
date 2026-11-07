@@ -1,26 +1,25 @@
 # Qredence Optimization Marketplace
 
-This repository is a small marketplace for the Qredence optimization plugin.
-It contains one installable payload, **`fleet-optimize` 0.2.0**, with two skills:
+This repository publishes one marketplace plugin, **`fleet-optimize` 0.2.0**.
+The plugin contains two independent optimization skills, while the repository
+also builds a separate Python distribution named **`gepa-omni`**.
 
-- **`gepa-omni-skill`** — standalone, fixed-portfolio, and adaptive
-  orchestration across the standalone reflective GEPA, AutoResearch, Meta-Harness, and
-  Best-of-N.
-- **`fleet-optimize-skill`** — focused latest-upstream GEPA optimization with
-  P×N proposal sampling, concurrent evaluation, selection strategies, and
-  optional grouped batch evaluation.
+| Component | Purpose | Runtime boundary |
+| --- | --- | --- |
+| `gepa-omni-skill` | Standalone GEPA, fixed portfolio, and adaptive engine selection across GEPA, AutoResearch, Meta-Harness, and Best-of-N. | Uses the plugin-native runtime for portfolio engines and the current upstream GEPA for the standalone reflective engine. |
+| `fleet-optimize-skill` | Latest-upstream GEPA optimization with P×N proposal sampling, parallel evaluation, selection strategies, and optional grouped batch evaluation. | Thin launcher around upstream GEPA; it does not import `gepa_omni`. |
+| `gepa-omni` Python package | Stable typed API for Python applications that want GEPA Omni orchestration. | Built from `packages/gepa-omni`; it is not an additional marketplace plugin. |
 
-Both skills optimize any artifact that can be serialized and scored: prompts,
-programs, configurations, schemas, SQL, regular expressions, plans, or agent
-instructions. The repository itself contains marketplace metadata, shared
-development tooling, tests, and documentation. The plugin owns its manifests,
-license, skills, references, and runtime payload. The public `gepa_omni`
-library stays in `packages/gepa-omni` and is not imported by
-`fleet-optimize-skill`.
+Both skills can optimize text artifacts that an evaluator can score, including
+prompts, programs, configurations, schemas, SQL, regular expressions, plans,
+and agent instructions. The plugin payload owns both skills, their references,
+runtime scripts, manifests, and license. Repository-level development tools,
+tests, examples, and the public Python package stay outside the installable
+plugin payload.
 
-## Install from the Qredence marketplace
+## Install the plugin
 
-Add the repository once, then install the plugin:
+Add the marketplace and install its one plugin:
 
 ```bash
 codex plugin marketplace add Qredence/gepa-omni
@@ -39,65 +38,66 @@ Use $fleet-optimize-skill to optimize this candidate with P×N proposals and
 choose a batch evaluator that fits my provider capacity.
 ```
 
-The marketplace definition is [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json).
-Its local source resolves to `./plugins/fleet-optimize`.
+The marketplace entry is [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json).
+It points to `./plugins/fleet-optimize`. Portable plugin consumers use
+`plugin.json`; Codex uses `.codex-plugin/plugin.json`. Both manifests include
+the same two skills.
 
-## GEPA dependency policy
+## Use the Python package
 
-The latest upstream GEPA implementation is the source of truth for the
-parallel-proposal API. Development uses the upstream Git repository while the
-required API is ahead of a published release:
-
-```toml
-"gepa[full] @ git+https://github.com/gepa-ai/gepa.git@8a2bed96385202f69caaeb5327a843ed2f5ea225"
-```
-
-The package and lockfile require this exact upstream revision because the
-published 0.1.4 distribution does not expose the engine-pluggable
-`OptimizeAnythingConfig` surface used by the plugin. To move to a newer GEPA,
-edit the commit SHA in the root `pyproject.toml` and in
-`packages/gepa-omni/pyproject.toml`, then refresh the lockfile:
+`gepa-omni` is a separately built Python distribution for embedding the GEPA
+Omni API in an application. It is not installed by adding the marketplace
+plugin. From this checkout, install the local package with:
 
 ```bash
-uv lock --upgrade-package gepa
-uv sync --locked --group dev
+uv pip install ./packages/gepa-omni
 ```
 
-The [Fleet Optimize preflight](plugins/fleet-optimize/skills/fleet-optimize-skill/scripts/preflight.py)
-reports the installed version/revision, configuration parameters, proposal
-sampling and selection symbols, and `batch_evaluator` availability. It fails
-with an upgrade message if the installed API is incompatible; it never selects
-the old API silently.
-
-## Plugin catalog
-
-### `gepa-omni-skill`
-
-GEPA Omni is the adaptive orchestration skill. It uses one evaluator contract
-across standalone GEPA and its plugin-native AutoResearch, Meta-Harness, and
-Best-of-N engines. `strategy="auto"` pilots eligible engines and allocates the
-remaining budget to the strongest option. `strategy="omni"` is an explicit
-fixed-portfolio experiment.
-
-The plugin-native runtime is independent of the installed GEPA package. Its
-MIT provenance is recorded in
-[`plugins/fleet-optimize/skills/gepa-omni-skill/THIRD_PARTY_NOTICES.md`](plugins/fleet-optimize/skills/gepa-omni-skill/THIRD_PARTY_NOTICES.md).
-Read the [GEPA Omni API reference](plugins/fleet-optimize/skills/gepa-omni-skill/references/api.md)
-for engine-specific settings and result metadata.
-
-Python callers install the isolated package and import its stable API:
-
-```bash
-uv pip install packages/gepa-omni
-```
+Then use its public API:
 
 ```python
 from gepa_omni import OmniConfig, optimize
+
+result = optimize(
+    seed_candidate="candidate text",
+    evaluator=evaluate,
+    dataset=train,
+    valset=validation,
+    test_set=heldout,
+    config=OmniConfig(strategy="auto", max_evals=100),
+)
 ```
 
-### `fleet-optimize-skill`
+See [`packages/gepa-omni/README.md`](packages/gepa-omni/README.md) for package
+setup and the evaluator contract. The package declares its own upstream GEPA
+dependency in `packages/gepa-omni/pyproject.toml`.
 
-Fleet Optimize is the focused latest upstream GEPA path. Its default is:
+## Choose a workflow
+
+### GEPA Omni
+
+Use `gepa-omni-skill` or the `gepa_omni` Python API for one evaluator contract
+across several optimization strategies:
+
+- `strategy="gepa"` runs standalone reflective GEPA.
+- `strategy="omni"` runs a fixed portfolio experiment.
+- `strategy="auto"` pilots eligible engines and allocates the remaining
+  budget based on improvement per evaluation. When a useful portfolio does not
+  fit the supplied budget, it falls back to standalone GEPA.
+
+GEPA Omni's plugin-native AutoResearch, Meta-Harness, and Best-of-N engines are
+independent of the installed GEPA package. The standalone reflective engine
+comes from the pinned upstream GEPA API. The adapted native runtime's MIT
+provenance is recorded in
+[`plugins/fleet-optimize/skills/gepa-omni-skill/THIRD_PARTY_NOTICES.md`](plugins/fleet-optimize/skills/gepa-omni-skill/THIRD_PARTY_NOTICES.md).
+See the [GEPA Omni API reference](plugins/fleet-optimize/skills/gepa-omni-skill/references/api.md)
+and [engine guide](plugins/fleet-optimize/skills/gepa-omni-skill/references/engines.md).
+
+### Fleet Optimize
+
+Use `fleet-optimize-skill` for the latest upstream GEPA `optimize_anything` parallel
+proposal workflow. The helper defaults to `PxNSampling(p=2, n=2)` and
+`AllImprovements()` and returns the native upstream result. A minimal call is:
 
 ```python
 from fleet_optimize import build_config, optimize
@@ -118,22 +118,17 @@ result = optimize(
 )
 ```
 
-The helper constructs the current upstream `OptimizeAnythingConfig` with
-`PxNSampling(p=2, n=2)` and `AllImprovements()`. Pass
-`SameParentSampling`, `IndependentSampling`, `BestImprovement`, or
-`TopKImprovements` explicitly when the search shape calls for it. Use
-`batch_evaluator` for provider batch APIs, Ray, Slurm, Modal, or another
-grouped execution system. The skill returns the native upstream result and
-does not import `gepa_omni`.
-
-See the [Fleet Optimize skill](plugins/fleet-optimize/skills/fleet-optimize-skill/SKILL.md),
+Set `PLUGIN_ROOT` to the installed `fleet-optimize` directory and add the
+skill's `scripts` directory to `PYTHONPATH` when importing `fleet_optimize`
+from a separate Python application. The [Fleet Optimize skill](plugins/fleet-optimize/skills/fleet-optimize-skill/SKILL.md),
 [API reference](plugins/fleet-optimize/skills/fleet-optimize-skill/references/api.md),
-and [parallel-proposals guide](plugins/fleet-optimize/skills/fleet-optimize-skill/references/parallel-proposals.md).
+and [parallel proposal guide](plugins/fleet-optimize/skills/fleet-optimize-skill/references/parallel-proposals.md)
+cover configuration, selection, batching, and concurrency.
 
-## Evaluator conventions
+## Evaluators and held-out data
 
-The two skills use similar higher-is-better evaluator conventions, but keep
-independent runtime and provider contracts. GEPA Omni uses:
+Both workflows expect higher-is-better scores and benefit from concrete
+feedback:
 
 ```python
 def evaluate(candidate: str, example) -> tuple[float, dict]:
@@ -145,12 +140,16 @@ def evaluate(candidate: str, example) -> tuple[float, dict]:
     }
 ```
 
-Keep training data, validation data, and held-out reporting data separate.
-`valset` is for selection/generalization; `test_set` is reporting-only. A
-feedback-rich evaluator should include failures, diffs, traces, partial-credit
-signals, and resource usage rather than only a scalar.
+Keep training, validation, and held-out data separate. Training examples
+provide proposal feedback; validation data supports candidate selection. For
+GEPA Omni, `test_set` is scored after optimization and is not used in engine
+selection or allocation. Fleet Optimize passes `test_set` to upstream GEPA for
+its final held-out reporting. Do not use held-out results to revise a candidate
+and then report those same examples as an untouched test set.
 
-GEPA Omni uses this process-scoped provider configuration:
+## Provider setup and data handling
+
+GEPA Omni uses process-scoped OpenAI-compatible Chat Completions settings:
 
 ```bash
 export OPENAI_BASE_URL="https://api.openai.com/v1"
@@ -158,76 +157,43 @@ export OPENAI_MODEL="your-model"
 export OPENAI_API_KEY="your-api-key"
 ```
 
-`OPENAI_MODEL` is authoritative for GEPA Omni. Its public API uses
-`runner_profile` for compatibility metadata; the historical `agent_backend`
-name is accepted for one release. These profiles do not launch Codex, Pi, or
-Claude CLIs. GEPA Omni's current runner receives no local shell or filesystem
-tools.
+`OPENAI_MODEL` is authoritative for GEPA Omni. The historical `agent_backend`
+name remains a compatibility alias for `runner_profile`; these profile labels
+do not launch Codex, Pi, or Claude CLIs or grant local shell and filesystem
+tools. For the official OpenAI endpoint, GEPA Omni may use `OPENAI_API_KEY`.
+For other providers, configure `GEPA_OMNI_API_KEY` or set
+`GEPA_OMNI_API_KEY_ENV` to the name of a provider-specific environment
+variable; GEPA Omni does not send `OPENAI_API_KEY` to another endpoint. Fleet
+Optimize follows upstream GEPA's `OPENAI_*` environment contract and does not
+apply GEPA Omni's provider-key isolation. Use a key scoped appropriately for
+the endpoint configured for that workflow.
 
-For the official OpenAI endpoint, `OPENAI_API_KEY` is allowed. For another
-endpoint, configure `GEPA_OMNI_API_KEY` or a provider-specific variable;
-`OPENAI_API_KEY` is never sent there. Remote endpoints require HTTPS, HTTP is
-allowed only for loopback, and private addresses require explicit opt-in.
+Remote endpoints require HTTPS; HTTP is allowed only for loopback. Private
+addresses require explicit opt-in. Interactive setup may request a missing
+model or base URL for the current process; it never asks for a key in chat or
+writes prompted values to `.env`. Configure keys through the environment or a
+secret manager. Preflight remains non-interactive and makes
+no model call unless `--test-lm` is supplied. Both workflows can send the
+candidate, evaluator inputs, and related prompts to the configured provider.
+Keep `run_dir` and `output_dir` absolute and outside the checkout.
 
-Interactive setup may ask for a missing model or base URL and applies it only
-to the current process. It never asks the user to paste `OPENAI_API_KEY` into
-chat, does not write prompted values to `.env`, and expects the key from the
-environment or a secret manager. Preflight remains non-interactive and reports
-which process variables are missing.
+Read [`PRIVACY.md`](PRIVACY.md) for the project's data-handling summary and
+the [provider guide](plugins/fleet-optimize/skills/gepa-omni-skill/references/providers.md)
+for endpoint configuration.
 
-Keep `run_dir` and `output_dir` absolute and outside the repository checkout.
-Optimizer state, provider traces, credentials, and run artifacts do not belong
-in this repository.
+## Development and packaging
 
-## Portable and Codex staging
-
-The staging tool emits the tracked runtime payload for `fleet-optimize`.
-The output must be external, empty, and named `fleet-optimize`:
+Use Python 3.10+ and `uv`. The development group and Python package pin
+upstream GEPA to `8a2bed96385202f69caaeb5327a843ed2f5ea225` because the
+engine-pluggable parallel-proposal API used here is ahead of a published
+release. Update the revision in the root and package `pyproject.toml` files
+together, then refresh the lockfile:
 
 ```bash
-stage_parent="$(mktemp -d)"
-python3 tools/stage_plugin.py \
-  --format portable \
-  --output "$stage_parent/fleet-optimize"
-
-codex_parent="$(mktemp -d)"
-python3 tools/stage_plugin.py \
-  --format codex \
-  --output "$codex_parent/fleet-optimize"
+uv lock --upgrade-package gepa
 ```
 
-Portable output contains `plugin.json`, `skills/`, and `LICENSE`. Codex output
-contains `.codex-plugin/plugin.json`, `skills/`, and `LICENSE`. Both skills
-are included. Development tests, tools, lockfiles, root metadata, and
-arbitrary untracked runtime files are excluded. File bytes come from the git
-index, so unstaged edits do not ship.
-
-## Repository layout
-
-```text
-plugins/
-  fleet-optimize/
-    plugin.json
-    .codex-plugin/plugin.json
-    LICENSE
-    skills/fleet-optimize-skill/
-    skills/gepa-omni-skill/
-.agents/plugins/marketplace.json
-README.md
-CONTRIBUTING.md
-pyproject.toml
-uv.lock
-packages/gepa-omni/
-tests/
-tools/
-```
-
-The plugin has distinct portable and Codex manifests with shared metadata.
-The root marketplace metadata is not copied into the installable payload.
-
-## Development and validation
-
-Use Python 3.10+ and `uv`:
+Run the repository checks:
 
 ```bash
 uv sync --locked --group dev
@@ -239,22 +205,57 @@ uv run ruff format --check .
 git diff --check
 ```
 
-Validate the payload with the plugin tooling before distribution. `PLUGIN_CREATOR` is the checkout of the plugin-creator skill that provides `scripts/validate_plugin.py`:
+Run the GEPA Omni preflight from the repository root before a live run. It is
+non-interactive and makes no model call unless `--test-lm` is supplied:
 
 ```bash
-python3 "$PLUGIN_CREATOR/scripts/validate_plugin.py" plugins/fleet-optimize
+uv run python plugins/fleet-optimize/skills/gepa-omni-skill/scripts/preflight.py --engine gepa
+uv run python plugins/fleet-optimize/skills/gepa-omni-skill/scripts/preflight.py --engine omni
 ```
 
-Run the GEPA Omni preflight with the approved endpoint key in the current
-process; it does not make a model call unless `--test-lm` is supplied. The
-Fleet Optimize skill retains its independent provider contract.
+For Fleet Optimize, set `PLUGIN_ROOT` to the installed plugin directory and
+run its preflight. It checks required upstream symbols and fails when the API
+is incompatible instead of silently selecting an older one:
 
-## Attribution and license
+```bash
+uv run python "$PLUGIN_ROOT/skills/fleet-optimize-skill/scripts/preflight.py"
+```
 
-The repository and the installable payload are distributed under the
-[MIT License](LICENSE). The plugin builds on the original
-[GEPA Anything project](https://github.com/gepa-ai/gepa), also MIT licensed.
-The adapted `gepa-omni` native runtime is pinned to commit
-[`8a2bed96385202f69caaeb5327a843ed2f5ea225`](https://github.com/gepa-ai/gepa/tree/8a2bed96385202f69caaeb5327a843ed2f5ea225);
-see its [third-party notice](plugins/fleet-optimize/skills/gepa-omni-skill/THIRD_PARTY_NOTICES.md)
-for scope and attribution.
+For plugin payload validation, set `PLUGIN_CREATOR` to the checkout of the
+plugin-creator skill and run:
+
+```bash
+uv run python "$PLUGIN_CREATOR/scripts/validate_plugin.py" plugins/fleet-optimize
+```
+
+To stage the tracked runtime payload, use an external empty directory named
+`fleet-optimize`:
+
+```bash
+stage_parent="$(mktemp -d)"
+uv run python tools/stage_plugin.py --format portable --output "$stage_parent/fleet-optimize"
+
+codex_parent="$(mktemp -d)"
+uv run python tools/stage_plugin.py --format codex --output "$codex_parent/fleet-optimize"
+```
+
+Staging reads file bytes from the Git index. Portable output contains
+`plugin.json`, `skills/`, and `LICENSE`; Codex output contains
+`.codex-plugin/plugin.json`, `skills/`, and `LICENSE`. Development tools,
+tests, lockfiles, root marketplace metadata, and untracked files are excluded.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the change checklist.
+
+## Examples and benchmarks
+
+[`examples/README.md`](examples/README.md) explains the support-ticket prompt
+optimization example, its usage accounting, and the included easy and hard
+datasets. [`benchmarks/gepa-omni/README.md`](benchmarks/gepa-omni/README.md)
+documents the credential-free schema smoke fixture; it does not run engines or
+measure performance.
+
+## License and attribution
+
+The repository and installable plugin are distributed under the [MIT License](LICENSE).
+The plugin builds on the MIT-licensed [GEPA project](https://github.com/gepa-ai/gepa).
+See the GEPA Omni [third-party notice](plugins/fleet-optimize/skills/gepa-omni-skill/THIRD_PARTY_NOTICES.md)
+for the adapted runtime's scope and attribution.

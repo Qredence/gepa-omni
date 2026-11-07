@@ -1,8 +1,11 @@
 # Writing evaluators
 
-When the Codex proposer is selected, the returned `info` values become materialized context for a
-read-only Codex subprocess. Keep feedback concrete and bounded: include the failing output, expected
-behavior, and a focused next change rather than dumping unrelated logs.
+The selected proposer receives returned `info` as feedback for the next
+candidate. The current GEPA Omni runtime sends that context through its
+OpenAI-compatible Chat Completions client; compatibility profiles do not
+launch a Codex subprocess. Keep feedback concrete and bounded: include the
+failing output, expected behavior, and a focused next change rather than
+dumping unrelated logs.
 
 The evaluator is where almost all of your effort and almost all of the quality come from. Whatever
 backend you choose can only be as good as the score you compute and the feedback you return.
@@ -35,15 +38,17 @@ grouped call.
 ## Make `info` feedback-rich (not just a number)
 The proposer (reflection LM or model runner) writes the next candidate by reading `info`. Give it specifics:
 ```python
-return score, {
-    "score": score,
-    "output": output,  # what the candidate produced
-    "expected": example.get("gold"),  # what was wanted (if available)
-    "error_type": err_type,  # compile error / wrong answer / format violation / timeout
-    "error_detail": traceback_or_diff,  # the actual message — concrete > vague
-    "passed_checks": [...],  # partial credit signals
-    "failed_checks": [...],
-}
+def evaluate(candidate, example):
+    output, score, err_type, traceback_or_diff = run_and_grade(candidate, example)
+    return score, {
+        "score": score,
+        "output": output,  # what the candidate produced
+        "expected": example.get("gold"),  # what was wanted (if available)
+        "error_type": err_type,  # compile error / wrong answer / format violation / timeout
+        "error_detail": traceback_or_diff,  # the actual message — concrete > vague
+        "passed_checks": [],  # partial credit signals
+        "failed_checks": [],
+    }
 ```
 Rule of thumb: if a smart human reading only `info` could tell you *how to fix the candidate*, the
 proposer LLM can too. If `info` is just `{"score": 0.0}`, the search is blind.
@@ -96,12 +101,14 @@ Trade-off: N× more eval calls (budget). Pick N to balance variance vs `EngineCo
 GEPA can keep an objective-level Pareto front. To use it, **return per-objective metrics under
 `info["scores"]`** — the adapter forwards them as `objective_scores`:
 ```python
-return score, {
-    "score": score,                        # the scalar the optimizer selects on
-    "scores": {"correct": correct_rate,    # per-objective metrics for the Pareto frontier
-               "speedup": speedup},        # all "higher is better"
-    ...
-}
+def evaluate(candidate, example):
+    output, score, correct_rate, speedup = run_and_grade(candidate, example)
+    return score, {
+        "output": output,
+        "score": score,                     # the scalar the optimizer selects on
+        "scores": {"correct": correct_rate, # per-objective metrics for the Pareto frontier
+                   "speedup": speedup},     # all "higher is better"
+    }
 ```
 For the GEPA engine, pass `EngineConfig(frontier_type="hybrid")` inside
 `GEPAConfig(engine=...)`. Hybrid is the default

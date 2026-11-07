@@ -1,5 +1,10 @@
 # Contributing to the Qredence Optimization Marketplace
 
+The installable artifact is the single `fleet-optimize` plugin. Keep its two
+skill payloads independent: `fleet-optimize-skill` uses upstream GEPA, while
+`gepa-omni-skill` provides the GEPA Omni workflow. The separate `gepa-omni`
+Python distribution is built from `packages/gepa-omni`.
+
 ## Development setup
 
 Use Python 3.10+ and `uv`:
@@ -43,8 +48,8 @@ the GEPA Omni skill owns the plugin-native runtime.
 - Stage both formats when packaging changes:
 
   ```bash
-  python3 tools/stage_plugin.py --plugin fleet-optimize --format portable --output /tmp/fleet-portable/fleet-optimize
-  python3 tools/stage_plugin.py --plugin fleet-optimize --format codex --output /tmp/fleet-codex/fleet-optimize
+  uv run python tools/stage_plugin.py --plugin fleet-optimize --format portable --output /tmp/fleet-portable/fleet-optimize
+  uv run python tools/stage_plugin.py --plugin fleet-optimize --format codex --output /tmp/fleet-codex/fleet-optimize
   ```
 
   Outputs must be external, empty, and named `fleet-optimize`. The staging
@@ -60,6 +65,12 @@ the GEPA Omni skill owns the plugin-native runtime.
 - Keep `plugins/fleet-optimize/skills/gepa-omni-skill/THIRD_PARTY_NOTICES.md` and
   `PROVENANCE.json` synchronized with the pinned MIT provenance headers when
   native runtime code is adapted. Run the provenance checker before packaging.
+- Keep the root README, `packages/gepa-omni/README.md`, examples, benchmarks,
+  privacy notice, and skill references aligned with the public APIs, provider
+  settings, artifact boundaries, held-out scoring behavior, and plugin layout.
+- Keep Python usage examples consistent with the installed interfaces. The
+  GEPA Omni package is separate from the marketplace plugin; do not document
+  `fleet-optimize-skill` as importing `gepa_omni`.
 
 ## Pull requests
 

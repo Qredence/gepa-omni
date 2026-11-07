@@ -45,8 +45,10 @@ environment or a secret manager.
 
 ## Preflight
 
+From the repository root, run:
+
 ```bash
-uv run python skills/gepa-omni-skill/scripts/preflight.py \
+uv run python plugins/fleet-optimize/skills/gepa-omni-skill/scripts/preflight.py \
   --engine autoresearch --agent-backend pi
 ```
 

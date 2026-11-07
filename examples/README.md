@@ -24,10 +24,10 @@ is read without overriding existing environment variables; it is never modified.
 Configure credentials through your environment or secret manager.
 
 The rates above are the standard GPT-6 Luna text-token rates checked on
-2026-11-07 at https://developers.openai.com/api/docs/models/gpt-6-luna.
-Supply rates appropriate to your configured model. Estimates account for reported
-cached-input tokens and include output reasoning tokens through the provider's
-completion-token count. They are not a billing statement and exclude any
+2026-11-07 against the [OpenAI API pricing page](https://developers.openai.com/api/docs/pricing).
+Supply rates appropriate to your configured model and pricing tier. Estimates
+account for reported cached-input tokens and use the provider's completion-token
+count for output, including reasoning tokens when present. They are not a billing statement and exclude any
 account-specific pricing, regional premiums, or other provider adjustments.
 
 The optimizer has a maximum of 120 example evaluations, including its seed
@@ -41,6 +41,7 @@ Artifacts default to an external temporary directory. Use `--output` to choose
 an external persistent directory. The script records:
 
 - `best-prompt.txt`: the actual selected prompt.
+- `benchmark.json`: a snapshot of the dataset and task used for the run.
 - `report.json`: before/after scores, evaluation counts, and estimated cost.
 - `usage.json`: per-call token usage for both evaluation and proposal calls.
 - `evaluations.json`: observed scores and diagnostic answers, without keys.

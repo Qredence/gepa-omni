@@ -6,8 +6,9 @@ When input/output USD-per-million
 rates are supplied, JSON token telemetry is also accumulated into `usd_cost`.
 This is separate from optional W&B or MLflow tracking.
 
-The GEPA engine logs to **Weights & Biases** and **MLflow** through
-`TrackingConfig`. Pass it as a top-level field on the published `GEPAConfig`:
+The standalone GEPA engine logs to **Weights & Biases** and **MLflow** through
+`TrackingConfig`. Pass it as a top-level field on the current upstream
+`GEPAConfig`:
 
 Set `OPENAI_BASE_URL` and `OPENAI_MODEL` before running. Use `OPENAI_API_KEY`
 only for the official OpenAI host; use `GEPA_OMNI_API_KEY` or a provider
