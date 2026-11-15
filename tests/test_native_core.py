@@ -214,6 +214,22 @@ class NativeCoreTests(unittest.TestCase):
         self.assertEqual(server._split_ids["train"], ["same", "unique", "same"])
         self.assertEqual(server.budget.used, 3)
 
+    def test_repeated_and_unique_examples_all_count_in_split_aggregate(self) -> None:
+        first = {"id": "a", "value": 0}
+        second = {"id": "b", "value": 1}
+        task = Task.from_mapping(
+            {"evaluator": lambda _candidate, item: float(item["value"]), "dataset": [first, first, second]},
+            seed_candidate="x",
+        )
+        server = EvalServer(task, BudgetTracker(max_evals=5))
+
+        score, info = server.evaluate_split("x", "train")
+        # Three rollouts happen (0+0+1)/3, not (0+1)/2 with one rollout lost.
+        self.assertEqual(score, 1 / 3)
+        self.assertEqual(info["num_evaluated"], 3)
+        self.assertEqual(len(info["scores"]), 2)
+        self.assertEqual(server.budget.used, 3)
+
     def test_re_registering_identical_item_keeps_its_original_id(self) -> None:
         item = {"id": "same", "value": 9}
         task = Task.from_mapping(

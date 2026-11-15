@@ -827,10 +827,6 @@ def _run_auto(
     def rank(item: tuple[str, Any]) -> float:
         return _auto_rank(item[1], seed_score)
 
-    # Capture counts before re-accounting a retained mutable pilot result.
-    pilot_evals = sum(int(getattr(value, "total_evals", 0)) for _engine, value in pilot_results) + len(
-        task.get("valset") or task.get("dataset") or [None]
-    )
     winning_engine, winning_result = max(pilot_results, key=rank)
     winning_candidate = getattr(winning_result, "best_candidate", None)
     if not isinstance(winning_candidate, str):
@@ -873,6 +869,12 @@ def _run_auto(
     total_continuation_evals = int(getattr(result, "total_evals", 0))
     continuation_metadata = getattr(result, "metadata", None)
     continuation_unscored = isinstance(continuation_metadata, dict) and continuation_metadata.get("scored") is False
+    # Sum the pilot counts before re-accounting the winner: a mutable winner
+    # (e.g. _PublicResult) is updated in place, which would otherwise replace
+    # its own count in this sum with the continuation count.
+    pilot_evals = sum(int(getattr(value, "total_evals", 0)) for _engine, value in pilot_results) + len(
+        task.get("valset") or task.get("dataset") or [None]
+    )
     if continuation_unscored or float(winning_result.best_score) > float(result.best_score):
         result = _reaccount_result(
             winning_result,

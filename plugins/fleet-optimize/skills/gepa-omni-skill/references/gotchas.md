@@ -63,9 +63,10 @@ reflection=ReflectionConfig(...))`. An unknown, misspelled, or stale key
 raises `TypeError` at construction. It does not accept top-level `engine=`,
 `engine_config`, `max_evals`, `max_token_cost`, or `output_dir`.
 
-`ReflectionConfig.reflective_dataset_enricher` is a keyword-only optional
-hook that can enrich the reflective dataset right before a proposal; pass it
-inside the nested `ReflectionConfig`, not on `GEPAConfig`.
+`ReflectionConfig.reflective_dataset_enricher` is an optional hook that can
+enrich the reflective dataset right before a proposal; pass it inside the
+nested `ReflectionConfig`, not on `GEPAConfig`. It is keyword-only on the
+top-level `gepa.optimize`, not on `optimize_anything`.
 
 ## 7a. Resuming a run_dir changed upstream
 
