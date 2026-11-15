@@ -772,6 +772,45 @@ class OmniPipelineTests(unittest.TestCase):
         self.assertEqual(result.metadata["auto"]["pilot_evals"], 7)
         self.assertEqual(result.metadata["auto"]["continuation_engine"], "autoresearch")
 
+    def test_auto_strategy_mutable_pilot_winner_keeps_its_pilot_eval_count(self) -> None:
+        original = omni_pipeline.run_optimization
+        pilot_calls: list[str] = []
+
+        class PilotResult:
+            """Mutable non-dataclass result, like _PublicResult."""
+
+            def __init__(self, total_evals: int) -> None:
+                self.best_candidate = "winner"
+                self.best_score = 0.95
+                self.total_evals = total_evals
+                self.metadata = {}
+
+        def wrapped(seed: str, **kwargs: object) -> PilotResult | SimpleNamespace:
+            if kwargs.get("strategy") == "auto" and kwargs.get("engine") is None:
+                return original(seed, **kwargs)
+            if kwargs.get("run_dir") and "pilot" in str(kwargs["run_dir"]):
+                pilot_calls.append(str(kwargs["run_dir"]))
+                return PilotResult(4 if len(pilot_calls) == 1 else 2)
+            return PilotResult(10)
+
+        with patch.object(omni_pipeline, "run_optimization", wrapped):
+            result = omni_pipeline.run_optimization(
+                "seed",
+                task={**self.task, "evaluator": lambda *_: (0.0, {})},
+                strategy="auto",
+                max_evals=40,
+                max_token_cost=None,
+                run_dir="/external/runs/auto",
+                output_dir="/external/outputs/auto",
+                launcher=self.launcher,
+                config_cls=FakeConfig,
+            )
+
+        # Pilot counts 4 + 2 + 2 + one baseline eval, plus 10 continuation evals.
+        self.assertEqual(result.total_evals, 4 + 2 + 2 + 1 + 10)
+        # The mutable winning pilot was not corrupted into reporting 10.
+        self.assertEqual(pilot_calls[0].split("/")[-1], "gepa")
+
     def test_native_best_of_n_is_independent_and_scores_heldout_afterwards(self) -> None:
         calls: list[dict[str, object]] = []
 

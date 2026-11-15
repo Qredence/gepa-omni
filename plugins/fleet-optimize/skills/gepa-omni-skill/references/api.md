@@ -35,7 +35,9 @@ lean accessors (`best_candidate`, `best_score`, `total_evals`, `eval_log`,
 `metadata`) are real properties, the candidate pool lives on the result
 (`candidates`, `best_idx`, `val_aggregate_scores`), and `metadata` no longer
 nests a `gepa_result` object. `total_evals` is the eval-server call count
-(`budget.used`), not `total_metric_calls`.
+(`budget.used`), not `total_metric_calls`; the legacy `GEPAConfig` path
+bypasses the eval server, so there `total_evals` falls back to
+`total_metric_calls`.
 
 ## Configuration
 
@@ -84,10 +86,11 @@ result = optimize_anything(
 
 `ReflectionConfig` also accepts an optional
 `reflective_dataset_enricher` hook: it receives the current candidate,
-evaluation batch, components to update, and the adapter's reflective dataset,
-and returns an enriched dataset just before the reflective proposal. Pass it
-as a keyword on `optimize`/`optimize_anything` or set it on `ReflectionConfig`
-directly; use it for additive feedback (for example, independent trace
+evaluation batch, components to update, and the adapter's reflective dataset
+(keyword-only), and returns an enriched dataset just before the reflective
+proposal. Set it on `ReflectionConfig` (also keyword-only on the top-level
+`gepa.optimize`, which does not apply to `optimize_anything`'s direct
+signature); use it for additive feedback (for example, independent trace
 reviewers) without wrapping the adapter.
 
 The package and plugin adapter preserve the external `run_dir`/`output_dir`

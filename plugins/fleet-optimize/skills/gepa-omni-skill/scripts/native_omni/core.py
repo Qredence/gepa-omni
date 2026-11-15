@@ -472,10 +472,13 @@ class EvalServer:
         results = self.evaluate_pairs(
             [(candidate, example) for _, example in examples], example_ids=[key for key, _ in examples]
         )
+        # Aggregate over the ordered evaluation results, not the id-keyed map:
+        # repeated ids (duplicated examples) must keep counting each rollout.
         scores = {key: score for (key, _), (score, _info) in zip(examples, results, strict=True)}
-        return sum(scores.values()) / len(scores), {
+        ordered_scores = [score for score, _info in results]
+        return sum(ordered_scores) / len(ordered_scores), {
             "scores": scores,
-            "num_evaluated": len(scores),
+            "num_evaluated": len(ordered_scores),
             "_budget": self.budget.status(),
         }
 

@@ -869,6 +869,12 @@ def _run_auto(
     total_continuation_evals = int(getattr(result, "total_evals", 0))
     continuation_metadata = getattr(result, "metadata", None)
     continuation_unscored = isinstance(continuation_metadata, dict) and continuation_metadata.get("scored") is False
+    # Sum the pilot counts before re-accounting the winner: a mutable winner
+    # (e.g. _PublicResult) is updated in place, which would otherwise replace
+    # its own count in this sum with the continuation count.
+    pilot_evals = sum(int(getattr(value, "total_evals", 0)) for _engine, value in pilot_results) + len(
+        task.get("valset") or task.get("dataset") or [None]
+    )
     if continuation_unscored or float(winning_result.best_score) > float(result.best_score):
         result = _reaccount_result(
             winning_result,
@@ -878,9 +884,6 @@ def _run_auto(
     scores = _score_public_test_set(result.best_candidate, task)
     if scores:
         result.metadata.update(test_score=sum(scores) / len(scores), test_scores=scores)
-    pilot_evals = sum(int(getattr(value, "total_evals", 0)) for _engine, value in pilot_results) + len(
-        task.get("valset") or task.get("dataset") or [None]
-    )
     return _with_auto_accounting(
         result,
         pilot_evals=pilot_evals,
