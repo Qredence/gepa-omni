@@ -1,7 +1,7 @@
 """OpenAI-compatible Chat Completions runners for native Omni engines.
 
 Adapted from the MIT-licensed GEPA project at commit
-8a2bed96385202f69caaeb5327a843ed2f5ea225. The adaptation retains the public
+ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309. The adaptation retains the public
 runner result and budget contracts while replacing provider subprocesses with
 the plugin-owned Chat Completions client.
 """

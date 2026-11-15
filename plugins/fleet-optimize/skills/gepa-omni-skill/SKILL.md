@@ -162,7 +162,7 @@ Raw prompts and responses are not retained by default. Set
 them, and keep the external run directory private.
 
 The adapted native runtime provenance is pinned to
-`8a2bed96385202f69caaeb5327a843ed2f5ea225`; see `THIRD_PARTY_NOTICES.md`.
+`ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309`; see `THIRD_PARTY_NOTICES.md`.
 
 ## References
 

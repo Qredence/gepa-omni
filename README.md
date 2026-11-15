@@ -188,7 +188,7 @@ for endpoint configuration.
 ## Development and packaging
 
 Use Python 3.10+ and `uv`. The development group and Python package pin
-upstream GEPA to `8a2bed96385202f69caaeb5327a843ed2f5ea225` because the
+upstream GEPA to `ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309` because the
 engine-pluggable parallel-proposal API used here is ahead of a published
 release. Update the revision in the root and package `pyproject.toml` files
 together, then refresh the lockfile:

@@ -28,7 +28,7 @@ When the published package does not yet contain the current parallel-proposal
 surface, install the upstream implementation explicitly:
 
 ```bash
-uv pip install "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@8a2bed96385202f69caaeb5327a843ed2f5ea225"
+uv pip install "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309"
 ```
 
 Set `PLUGIN_ROOT` to the installed plugin directory before running the

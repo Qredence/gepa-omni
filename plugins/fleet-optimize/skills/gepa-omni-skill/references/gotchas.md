@@ -63,6 +63,25 @@ reflection=ReflectionConfig(...))`. An unknown, misspelled, or stale key
 raises `TypeError` at construction. It does not accept top-level `engine=`,
 `engine_config`, `max_evals`, `max_token_cost`, or `output_dir`.
 
+`ReflectionConfig.reflective_dataset_enricher` is an optional hook that can
+enrich the reflective dataset right before a proposal; pass it inside the
+nested `ReflectionConfig`, not on `GEPAConfig`. It is keyword-only on the
+top-level `gepa.optimize`, not on `optimize_anything`.
+
+## 7a. Resuming a run_dir changed upstream
+
+When `EngineConfig.run_dir` already contains `gepa_state.bin`, upstream GEPA
+resumes from that checkpoint and no longer re-evaluates the seed candidate on
+the valset; a new seed that is not in the saved pool is evaluated once and
+added as a child of the saved seed. Checkpoints saved by a *newer* GEPA than
+the installed one are rejected with an upgrade message, so a run directory
+written by a newer engine cannot be mixed into this checkout. Checkpoints
+saved by *older* versions (schema below v7) are migrated on load, not
+rejected — but their evaluation cache predates the
+`(candidate, split, example_id)` namespacing, so those cached evaluations are
+silently dropped on resume and re-spent against the budget. When in doubt
+across versions, resume into a fresh `run_dir` instead of mixing.
+
 ## 8. Saturated signals return the seed
 
 The GEPA backend learns from examples the seed gets wrong. If the seed already

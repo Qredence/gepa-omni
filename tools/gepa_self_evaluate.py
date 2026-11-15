@@ -7,7 +7,7 @@ This is a trusted-development operation and requires the explicit
 checkout. Run it from an environment that has ``gepa[full]``, ``pytest``,
 ``ruff``, and the OpenAI-compatible Chat Completions environment:
 
-    uv run --with "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@8a2bed96385202f69caaeb5327a843ed2f5ea225" \
+    uv run --with "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309" \
         python plugins/fleet-optimize/skills/gepa-omni-skill/scripts/self_evaluate.py \
         --allow-candidate-execution \
         --plugin-eval-command "node /path/to/plugin-eval.js"

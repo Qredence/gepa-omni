@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
@@ -32,6 +33,35 @@ class AutoRankTests(unittest.TestCase):
 
         self.assertEqual(omni_pipeline._auto_rank(failed, None), float("-inf"))
         self.assertGreater(omni_pipeline._auto_rank(measured, None), omni_pipeline._auto_rank(failed, None))
+
+
+class FrozenEngineResultTests(unittest.TestCase):
+    """Auto accounting must survive frozen dataclasses with derived fields."""
+
+    def test_frozen_dataclass_with_read_only_total_evals_is_reaccounted(self) -> None:
+        @dataclass(frozen=True)
+        class EngineResult:
+            best_candidate: str
+            best_score: float
+            eval_server_calls: int | None
+            metadata: dict
+
+            @property
+            def total_evals(self) -> int:
+                return self.eval_server_calls if self.eval_server_calls is not None else 0
+
+        raw = EngineResult(best_candidate="c", best_score=1.5, eval_server_calls=4, metadata={})
+
+        reaccounted = omni_pipeline._with_auto_accounting(raw, pilot_evals=3, auto={"pilot_engines": ["gepa"]})
+
+        self.assertIsInstance(reaccounted, EngineResult)
+        self.assertEqual(reaccounted.total_evals, 7)
+        self.assertEqual(reaccounted.metadata["auto"]["pilot_engines"], ["gepa"])
+        self.assertEqual(reaccounted.best_score, 1.5)
+        self.assertEqual(reaccounted.best_candidate, "c")
+        # The original frozen snapshot stays untouched.
+        self.assertEqual(raw.metadata, {})
+        self.assertEqual(raw.total_evals, 4)
 
 
 class FakeConfig:
@@ -741,6 +771,76 @@ class OmniPipelineTests(unittest.TestCase):
         self.assertEqual(result.total_evals, 9)
         self.assertEqual(result.metadata["auto"]["pilot_evals"], 7)
         self.assertEqual(result.metadata["auto"]["continuation_engine"], "autoresearch")
+
+    def test_auto_retained_mutable_pilot_preserves_original_evaluation_counts(self) -> None:
+        original = omni_pipeline.run_optimization
+        phases = iter([
+            SimpleNamespace(best_candidate="winner", best_score=0.95, total_evals=2, metadata={}),
+            SimpleNamespace(best_candidate="other", best_score=0.2, total_evals=3, metadata={}),
+            SimpleNamespace(best_candidate="other", best_score=0.3, total_evals=4, metadata={}),
+            SimpleNamespace(best_candidate="continuation", best_score=0.1, total_evals=5, metadata={}),
+        ])
+
+        def wrapped(seed: str, **kwargs: object) -> SimpleNamespace:
+            if kwargs.get("strategy") == "auto" and kwargs.get("engine") is None:
+                return original(seed, **kwargs)
+            return next(phases)
+
+        with patch.object(omni_pipeline, "run_optimization", wrapped):
+            result = omni_pipeline.run_optimization(
+                "seed",
+                task={**self.task, "evaluator": lambda *_: (0.0, {})},
+                strategy="auto",
+                max_evals=40,
+                max_token_cost=None,
+                run_dir="/external/runs/auto",
+                output_dir="/external/outputs/auto",
+                launcher=self.launcher,
+                config_cls=FakeConfig,
+            )
+
+        self.assertEqual(result.best_candidate, "winner")
+        self.assertEqual(result.total_evals, 15)  # pilots 2+3+4, baseline 1, continuation 5
+        self.assertEqual(result.metadata["auto"]["pilot_evals"], 10)
+
+    def test_auto_strategy_mutable_pilot_winner_keeps_its_pilot_eval_count(self) -> None:
+        original = omni_pipeline.run_optimization
+        pilot_calls: list[str] = []
+
+        class PilotResult:
+            """Mutable non-dataclass result, like _PublicResult."""
+
+            def __init__(self, total_evals: int) -> None:
+                self.best_candidate = "winner"
+                self.best_score = 0.95
+                self.total_evals = total_evals
+                self.metadata = {}
+
+        def wrapped(seed: str, **kwargs: object) -> PilotResult | SimpleNamespace:
+            if kwargs.get("strategy") == "auto" and kwargs.get("engine") is None:
+                return original(seed, **kwargs)
+            if kwargs.get("run_dir") and "pilot" in str(kwargs["run_dir"]):
+                pilot_calls.append(str(kwargs["run_dir"]))
+                return PilotResult(4 if len(pilot_calls) == 1 else 2)
+            return PilotResult(10)
+
+        with patch.object(omni_pipeline, "run_optimization", wrapped):
+            result = omni_pipeline.run_optimization(
+                "seed",
+                task={**self.task, "evaluator": lambda *_: (0.0, {})},
+                strategy="auto",
+                max_evals=40,
+                max_token_cost=None,
+                run_dir="/external/runs/auto",
+                output_dir="/external/outputs/auto",
+                launcher=self.launcher,
+                config_cls=FakeConfig,
+            )
+
+        # Pilot counts 4 + 2 + 2 + one baseline eval, plus 10 continuation evals.
+        self.assertEqual(result.total_evals, 4 + 2 + 2 + 1 + 10)
+        # The mutable winning pilot was not corrupted into reporting 10.
+        self.assertEqual(pilot_calls[0].split("/")[-1], "gepa")
 
     def test_native_best_of_n_is_independent_and_scores_heldout_afterwards(self) -> None:
         calls: list[dict[str, object]] = []

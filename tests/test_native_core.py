@@ -5,8 +5,10 @@ import sys
 import tempfile
 import threading
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
+import warnings
 from pathlib import Path
 
 
@@ -174,6 +176,91 @@ class NativeCoreTests(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as error:
                 urllib.request.urlopen(request)
             self.assertEqual(error.exception.code, 404)
+
+    def test_duplicate_explicit_ids_distinct_items_keep_every_item_reachable(self) -> None:
+        task = Task.from_mapping(
+            {
+                "evaluator": lambda _candidate, item: float(item["value"]),
+                "dataset": [
+                    {"id": "dup", "value": 1},
+                    {"id": "dup", "value": 2},
+                    {"value": 3},
+                ],
+            },
+            seed_candidate="x",
+        )
+        server = EvalServer(task, BudgetTracker(max_evals=5), output_dir=self.output_dir)
+
+        score, info = server.evaluate_split("x", "train")
+        self.assertEqual(score, 2.0)
+        self.assertEqual(len(info["scores"]), 3)
+        self.assertEqual(len(server._split_ids["train"]), 3)
+        self.assertEqual(len(set(server._split_ids["train"])), 3)
+
+    def test_split_counts_repeated_and_unique_examples(self) -> None:
+        repeated = {"id": "same", "value": 1}
+        unique = {"id": "unique", "value": 4}
+        task = Task.from_mapping(
+            {"evaluator": lambda _candidate, item: float(item["value"]), "dataset": [repeated, unique, repeated]},
+            seed_candidate="x",
+        )
+        server = EvalServer(task, BudgetTracker(max_evals=3))
+
+        score, info = server.evaluate_split("x", "train")
+
+        self.assertEqual(score, 2.0)
+        self.assertEqual(info["num_evaluated"], 3)
+        self.assertEqual(info["scores"], {"same": 1.0, "unique": 4.0})
+        self.assertEqual(server._split_ids["train"], ["same", "unique", "same"])
+        self.assertEqual(server.budget.used, 3)
+
+    def test_repeated_and_unique_examples_all_count_in_split_aggregate(self) -> None:
+        first = {"id": "a", "value": 0}
+        second = {"id": "b", "value": 1}
+        task = Task.from_mapping(
+            {"evaluator": lambda _candidate, item: float(item["value"]), "dataset": [first, first, second]},
+            seed_candidate="x",
+        )
+        server = EvalServer(task, BudgetTracker(max_evals=5))
+
+        score, info = server.evaluate_split("x", "train")
+        # Three rollouts happen (0+0+1)/3, not (0+1)/2 with one rollout lost.
+        self.assertEqual(score, 1 / 3)
+        self.assertEqual(info["num_evaluated"], 3)
+        self.assertEqual(len(info["scores"]), 2)
+        self.assertEqual(server.budget.used, 3)
+
+    def test_re_registering_identical_item_keeps_its_original_id(self) -> None:
+        item = {"id": "same", "value": 9}
+        task = Task.from_mapping(
+            {"evaluator": lambda _candidate, x: float(x["value"]), "dataset": [item, item]},
+            seed_candidate="x",
+        )
+        server = EvalServer(task, BudgetTracker(max_evals=5))
+        self.assertEqual(server._split_ids["train"], ["same", "same"])
+
+    def test_persistence_write_failures_warn_instead_of_failing_paid_evaluations(self) -> None:
+        task = Task.from_mapping(
+            {"evaluator": lambda _candidate, _item: 0.5, "dataset": ["one"]},
+            seed_candidate="x",
+        )
+        server = EvalServer(task, BudgetTracker(max_evals=3), output_dir=self.output_dir)
+        original_open = Path.open
+
+        def deny_writes(path: Path, *args: object, **kwargs: object):
+            if "w" in str(kwargs.get("mode", args[0] if args else "")) or "a" in str(
+                kwargs.get("mode", args[0] if args else "")
+            ):
+                raise OSError("disk on fire")
+            return original_open(path, *args, **kwargs)  # type: ignore[arg-type]
+
+        with unittest.mock.patch.object(Path, "open", deny_writes):
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                score, _info = server.evaluate_split("x", "train")
+        self.assertEqual(score, 0.5)
+        self.assertEqual(server.budget.used, 1)
+        self.assertTrue(any("Could not write" in str(w.message) or "Could not append" in str(w.message) for w in caught))
 
     def test_output_dir_inside_repository_is_rejected(self) -> None:
         result = NativeResult("best", 0.9, 1, [], {})

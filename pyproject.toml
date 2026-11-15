@@ -15,7 +15,7 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.15.2",
     "gepa-omni",
-    "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@8a2bed96385202f69caaeb5327a843ed2f5ea225"
+    "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309"
 ]
 
 [tool.pytest.ini_options]
