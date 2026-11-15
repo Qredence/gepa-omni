@@ -772,6 +772,37 @@ class OmniPipelineTests(unittest.TestCase):
         self.assertEqual(result.metadata["auto"]["pilot_evals"], 7)
         self.assertEqual(result.metadata["auto"]["continuation_engine"], "autoresearch")
 
+    def test_auto_retained_mutable_pilot_preserves_original_evaluation_counts(self) -> None:
+        original = omni_pipeline.run_optimization
+        phases = iter([
+            SimpleNamespace(best_candidate="winner", best_score=0.95, total_evals=2, metadata={}),
+            SimpleNamespace(best_candidate="other", best_score=0.2, total_evals=3, metadata={}),
+            SimpleNamespace(best_candidate="other", best_score=0.3, total_evals=4, metadata={}),
+            SimpleNamespace(best_candidate="continuation", best_score=0.1, total_evals=5, metadata={}),
+        ])
+
+        def wrapped(seed: str, **kwargs: object) -> SimpleNamespace:
+            if kwargs.get("strategy") == "auto" and kwargs.get("engine") is None:
+                return original(seed, **kwargs)
+            return next(phases)
+
+        with patch.object(omni_pipeline, "run_optimization", wrapped):
+            result = omni_pipeline.run_optimization(
+                "seed",
+                task={**self.task, "evaluator": lambda *_: (0.0, {})},
+                strategy="auto",
+                max_evals=40,
+                max_token_cost=None,
+                run_dir="/external/runs/auto",
+                output_dir="/external/outputs/auto",
+                launcher=self.launcher,
+                config_cls=FakeConfig,
+            )
+
+        self.assertEqual(result.best_candidate, "winner")
+        self.assertEqual(result.total_evals, 15)  # pilots 2+3+4, baseline 1, continuation 5
+        self.assertEqual(result.metadata["auto"]["pilot_evals"], 10)
+
     def test_native_best_of_n_is_independent_and_scores_heldout_afterwards(self) -> None:
         calls: list[dict[str, object]] = []
 

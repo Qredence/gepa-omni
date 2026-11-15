@@ -34,8 +34,15 @@ now returns a single unified `gepa.core.result.GEPAResult` on every run: the
 lean accessors (`best_candidate`, `best_score`, `total_evals`, `eval_log`,
 `metadata`) are real properties, the candidate pool lives on the result
 (`candidates`, `best_idx`, `val_aggregate_scores`), and `metadata` no longer
-nests a `gepa_result` object. `total_evals` is the eval-server call count
-(`budget.used`), not `total_metric_calls`.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:3c06330d5c12a5d6abd47656a62e1ba104c7f3266642c83c3bbfe738c57579b2 -->
+
+nests a `gepa_result` object. For eval-server calls, `total_evals` is the
+call count (`budget.used`). When optimization bypasses the eval server,
+`total_evals` falls back to `total_metric_calls`.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ## Configuration
 
@@ -86,9 +93,16 @@ result = optimize_anything(
 `reflective_dataset_enricher` hook: it receives the current candidate,
 evaluation batch, components to update, and the adapter's reflective dataset,
 and returns an enriched dataset just before the reflective proposal. Pass it
-as a keyword on `optimize`/`optimize_anything` or set it on `ReflectionConfig`
-directly; use it for additive feedback (for example, independent trace
-reviewers) without wrapping the adapter.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:9aad025fe274c5071fe1b2a49105b17c8c97ad8ae8c45d209e564f5da146ba46 -->
+
+as a keyword on `optimize`. For `optimize_anything`, configure it through
+`GEPAConfig(reflection=ReflectionConfig(reflective_dataset_enricher=enricher))`;
+it is not a direct keyword argument on that entry point. Use it for additive
+feedback (for example, independent trace reviewers) without wrapping the adapter.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 The package and plugin adapter preserve the external `run_dir`/`output_dir`
 boundary. Do not import the internal `omni_pipeline` module in user code.

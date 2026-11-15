@@ -473,9 +473,9 @@ class EvalServer:
             [(candidate, example) for _, example in examples], example_ids=[key for key, _ in examples]
         )
         scores = {key: score for (key, _), (score, _info) in zip(examples, results, strict=True)}
-        return sum(scores.values()) / len(scores), {
+        return sum(score for score, _info in results) / len(results), {
             "scores": scores,
-            "num_evaluated": len(scores),
+            "num_evaluated": len(results),
             "_budget": self.budget.status(),
         }
 

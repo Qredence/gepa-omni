@@ -827,6 +827,10 @@ def _run_auto(
     def rank(item: tuple[str, Any]) -> float:
         return _auto_rank(item[1], seed_score)
 
+    # Capture counts before re-accounting a retained mutable pilot result.
+    pilot_evals = sum(int(getattr(value, "total_evals", 0)) for _engine, value in pilot_results) + len(
+        task.get("valset") or task.get("dataset") or [None]
+    )
     winning_engine, winning_result = max(pilot_results, key=rank)
     winning_candidate = getattr(winning_result, "best_candidate", None)
     if not isinstance(winning_candidate, str):
@@ -878,9 +882,6 @@ def _run_auto(
     scores = _score_public_test_set(result.best_candidate, task)
     if scores:
         result.metadata.update(test_score=sum(scores) / len(scores), test_scores=scores)
-    pilot_evals = sum(int(getattr(value, "total_evals", 0)) for _engine, value in pilot_results) + len(
-        task.get("valset") or task.get("dataset") or [None]
-    )
     return _with_auto_accounting(
         result,
         pilot_evals=pilot_evals,
