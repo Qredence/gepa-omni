@@ -1,0 +1,32 @@
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/omni_pipeline.py
+  s_75d40a29dbeb59::t_9b7dbc893e9203 872-877
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/core.py
+  s_75d40a29dbeb59::t_0620b687b6bb95 475-476,478-479,481
+plugins/fleet-optimize/skills/gepa-omni-skill/references/gotchas.md
+  s_75d40a29dbeb59::t_613448bc79eb02 66-69
+tests/test_omni_pipeline.py
+  s_75d40a29dbeb59::t_95331cfc8b23d0 809-810
+  s_75d40a29dbeb59::t_37e1bf31c78f47 775-808,811-813
+tests/test_native_core.py
+  s_75d40a29dbeb59::t_b160035dab2955 210-211
+  s_75d40a29dbeb59::t_a36d0ec5ca0367 200-209,212-215
+plugins/fleet-optimize/skills/gepa-omni-skill/references/api.md
+  s_75d40a29dbeb59::t_9b74e3a2a1e631 89-93
+  s_75d40a29dbeb59::t_02b9e0ad879ede 38-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9f877925fcb86bcda898104c1eb8947d2e0c38be",
+  "prompts": {},
+  "sessions": {
+    "s_75d40a29dbeb59": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "ef684093-880b-43d2-8198-34f37ef46d94",
+        "model": "z-ai/glm-5.3-flash"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
