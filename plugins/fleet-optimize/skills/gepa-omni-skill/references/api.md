@@ -29,7 +29,13 @@ result = optimize(
 `optimize` is evaluator-first. `run_optimization` accepts the same data as a
 task mapping for integrations that already normalize evaluators. Both return a
 stable result view with `best_candidate`, `best_score`, `total_evals`,
-`metadata`, and the engine-specific `raw` result.
+`metadata`, and the engine-specific `raw` result. Upstream `optimize_anything`
+now returns a single unified `gepa.core.result.GEPAResult` on every run: the
+lean accessors (`best_candidate`, `best_score`, `total_evals`, `eval_log`,
+`metadata`) are real properties, the candidate pool lives on the result
+(`candidates`, `best_idx`, `val_aggregate_scores`), and `metadata` no longer
+nests a `gepa_result` object. `total_evals` is the eval-server call count
+(`budget.used`), not `total_metric_calls`.
 
 ## Configuration
 
@@ -75,6 +81,14 @@ result = optimize_anything(
     ),
 )
 ```
+
+`ReflectionConfig` also accepts an optional
+`reflective_dataset_enricher` hook: it receives the current candidate,
+evaluation batch, components to update, and the adapter's reflective dataset,
+and returns an enriched dataset just before the reflective proposal. Pass it
+as a keyword on `optimize`/`optimize_anything` or set it on `ReflectionConfig`
+directly; use it for additive feedback (for example, independent trace
+reviewers) without wrapping the adapter.
 
 The package and plugin adapter preserve the external `run_dir`/`output_dir`
 boundary. Do not import the internal `omni_pipeline` module in user code.

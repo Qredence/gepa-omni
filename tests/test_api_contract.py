@@ -103,7 +103,7 @@ class ApiContractDocumentationTests(unittest.TestCase):
 
     def test_mit_provenance_is_pinned_and_packaged(self) -> None:
         self.assertIn("MIT", self.notice)
-        self.assertIn("8a2bed96385202f69caaeb5327a843ed2f5ea225", self.notice)
+        self.assertIn("ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309", self.notice)
         self.assertIn("native_omni/core.py", self.notice)
         self.assertIn("native_omni/runners.py", self.notice)
         self.assertIn("THIRD_PARTY_NOTICES.md", self.readme)
@@ -113,7 +113,7 @@ class ApiContractDocumentationTests(unittest.TestCase):
         self.assertEqual(self.provenance["upstream"]["license"], "MIT")
         self.assertEqual(
             self.provenance["upstream"]["commit"],
-            "8a2bed96385202f69caaeb5327a843ed2f5ea225",
+            "ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309",
         )
         self.assertEqual(
             self.provenance["files"],
@@ -122,7 +122,7 @@ class ApiContractDocumentationTests(unittest.TestCase):
         self.assertIn("PROVENANCE.json", self.notice)
 
     def test_upstream_semantic_baseline_remains_recorded(self) -> None:
-        self.assertIn("8a2bed96385202f69caaeb5327a843ed2f5ea225", self.skill)
+        self.assertIn("ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309", self.skill)
 
 
 if __name__ == "__main__":

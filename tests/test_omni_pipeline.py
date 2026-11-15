@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
@@ -32,6 +33,35 @@ class AutoRankTests(unittest.TestCase):
 
         self.assertEqual(omni_pipeline._auto_rank(failed, None), float("-inf"))
         self.assertGreater(omni_pipeline._auto_rank(measured, None), omni_pipeline._auto_rank(failed, None))
+
+
+class FrozenEngineResultTests(unittest.TestCase):
+    """Auto accounting must survive frozen dataclasses with derived fields."""
+
+    def test_frozen_dataclass_with_read_only_total_evals_is_reaccounted(self) -> None:
+        @dataclass(frozen=True)
+        class EngineResult:
+            best_candidate: str
+            best_score: float
+            eval_server_calls: int | None
+            metadata: dict
+
+            @property
+            def total_evals(self) -> int:
+                return self.eval_server_calls if self.eval_server_calls is not None else 0
+
+        raw = EngineResult(best_candidate="c", best_score=1.5, eval_server_calls=4, metadata={})
+
+        reaccounted = omni_pipeline._with_auto_accounting(raw, pilot_evals=3, auto={"pilot_engines": ["gepa"]})
+
+        self.assertIsInstance(reaccounted, EngineResult)
+        self.assertEqual(reaccounted.total_evals, 7)
+        self.assertEqual(reaccounted.metadata["auto"]["pilot_engines"], ["gepa"])
+        self.assertEqual(reaccounted.best_score, 1.5)
+        self.assertEqual(reaccounted.best_candidate, "c")
+        # The original frozen snapshot stays untouched.
+        self.assertEqual(raw.metadata, {})
+        self.assertEqual(raw.total_evals, 4)
 
 
 class FakeConfig:

@@ -114,7 +114,7 @@ def _load_surface() -> UpstreamSurface:
             "Fleet Optimize requires the latest upstream GEPA surface with a "
             "current engine-pluggable config, proposal sampling/selection strategies, "
             "and optimize_anything(batch_evaluator=...). Install the latest "
-            "release or `gepa[full] @ git+https://github.com/gepa-ai/gepa.git@8a2bed96385202f69caaeb5327a843ed2f5ea225`."
+            "release or `gepa[full] @ git+https://github.com/gepa-ai/gepa.git@ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309`."
         ) from exc
 
     try:

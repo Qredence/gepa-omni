@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, is_dataclass, replace
+from dataclasses import asdict, dataclass, fields, is_dataclass, replace
 from inspect import Parameter, signature
 from pathlib import Path
 from types import SimpleNamespace
@@ -685,20 +685,49 @@ def _annotate_result(
     }
 
 
-def _with_auto_accounting(result: Any, *, pilot_evals: int, auto: Mapping[str, Any]) -> Any:
-    """Add pilot evaluations without mutating a frozen engine result."""
+def _reaccount_result(result: Any, *, total_evals: int, metadata: dict[str, Any]) -> Any:
+    """Return a copy of an engine result with recomputed accounting fields.
 
-    total_evals = int(getattr(result, "total_evals", 0)) + pilot_evals
-    metadata = getattr(result, "metadata", None)
-    params = getattr(result, "__dataclass_params__", None)
-    if is_dataclass(result) and params is not None and params.frozen:
-        merged = dict(metadata) if isinstance(metadata, dict) else {}
-        merged["auto"] = dict(auto)
-        return replace(result, total_evals=total_evals, metadata=merged)
-    if isinstance(metadata, dict):
-        metadata["auto"] = dict(auto)
+    Engine results vary in shape: upstream ``GEPAResult`` is a frozen
+    dataclass whose ``total_evals`` is a read-only property derived from the
+    ``eval_server_calls`` field, the native ``Result`` is a frozen dataclass
+    with a plain ``total_evals`` field, and fake results may be plain
+    namespaces. Rebuild via field-aware ``replace`` when the type is a
+    dataclass so the original type (and its derived properties) survive;
+    otherwise mutate attributes directly.
+    """
+    if is_dataclass(result):
+        names = {info.name for info in fields(result)}
+        updates: dict[str, Any] = {}
+        if "metadata" in names:
+            updates["metadata"] = metadata
+        if "total_evals" in names:
+            updates["total_evals"] = total_evals
+        elif "eval_server_calls" in names:
+            # ``total_evals`` is a derived property on upstream GEPAResult;
+            # setting its backing field recomputes it.
+            updates["eval_server_calls"] = total_evals
+        elif "total_metric_calls" in names:
+            updates["total_metric_calls"] = total_evals
+        else:
+            raise TypeError(
+                f"cannot re-account {type(result).__name__}: no total_evals, "
+                "eval_server_calls, or total_metric_calls field"
+            )
+        return replace(result, **updates)
+    if hasattr(result, "metadata"):
+        result.metadata = metadata
     result.total_evals = total_evals
     return result
+
+
+def _with_auto_accounting(result: Any, *, pilot_evals: int, auto: Mapping[str, Any]) -> Any:
+    """Add pilot evaluations without mutating a frozen engine result."""
+    metadata = getattr(result, "metadata", None)
+    merged = dict(metadata) if isinstance(metadata, dict) else {}
+    merged["auto"] = dict(auto)
+    total_evals = int(getattr(result, "total_evals", 0)) + pilot_evals
+    return _reaccount_result(result, total_evals=total_evals, metadata=merged)
 
 
 def _seed_score(seed_candidate: str, task: Mapping[str, Any]) -> float:
@@ -841,15 +870,10 @@ def _run_auto(
     continuation_metadata = getattr(result, "metadata", None)
     continuation_unscored = isinstance(continuation_metadata, dict) and continuation_metadata.get("scored") is False
     if continuation_unscored or float(winning_result.best_score) > float(result.best_score):
-        result = (
-            replace(winning_result, total_evals=total_continuation_evals, metadata=dict(winning_result.metadata))
-            if is_dataclass(winning_result)
-            else SimpleNamespace(
-                best_candidate=winning_result.best_candidate,
-                best_score=winning_result.best_score,
-                total_evals=total_continuation_evals,
-                metadata=dict(getattr(winning_result, "metadata", {})),
-            )
+        result = _reaccount_result(
+            winning_result,
+            total_evals=total_continuation_evals,
+            metadata=dict(getattr(winning_result, "metadata", {})),
         )
     scores = _score_public_test_set(result.best_candidate, task)
     if scores:

@@ -1,7 +1,7 @@
 """Task, evaluation, budget, and result primitives for native Omni engines.
 
 Adapted from the MIT-licensed GEPA project at commit
-8a2bed96385202f69caaeb5327a843ed2f5ea225.  This module is a deliberately
+ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309.  This module is a deliberately
 small stdlib-only implementation and imports neither GEPA nor plugin sources.
 """
 
@@ -13,6 +13,7 @@ import json
 import math
 import threading
 import time
+import warnings
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -326,8 +327,17 @@ class EvalServer:
         for split, examples in (("train", task.dataset), ("val", task.valset)):
             for index, item in enumerate(examples or []):
                 example_id = _example_id(item, f"{split}_{index}")
-                if example_id in self._examples:
+                if example_id in self._examples and self._examples[example_id] is not item:
+                    # The explicit id collides with a different earlier example;
+                    # fall back to the positional id, suffixing past any earlier
+                    # collision (mirrors the upstream eval-server id fix). The
+                    # identity guard keeps a re-registered identical item on its
+                    # original id instead of allocating a duplicate.
                     example_id = f"{split}_{index}"
+                    suffix = 1
+                    while example_id in self._examples and self._examples[example_id] is not item:
+                        example_id = f"{split}_{index}_{suffix}"
+                        suffix += 1
                 self._examples[example_id] = item
                 self._split_ids[split].append(example_id)
 
@@ -373,24 +383,37 @@ class EvalServer:
                 self._best_score, self._best_candidate = score, candidate
         self._persist_eval(entry)
 
+    def _best_effort_write(self, path: Path, text: str) -> None:
+        """Write an artifact best-effort: a paid-for evaluation must not fail on I/O."""
+        try:
+            path.write_text(text, encoding="utf-8")
+        except OSError as exc:
+            warnings.warn(f"Could not write {path}: {exc}", RuntimeWarning, stacklevel=3)
+
     def _persist_eval(self, entry: Mapping[str, Any]) -> None:
         if self.output_dir is None:
             return
-        eval_dir = self.output_dir / "evals"
-        eval_dir.mkdir(exist_ok=True)
-        (eval_dir / f"{entry['eval']}.json").write_text(
-            json.dumps(entry, indent=2, default=str) + "\n", encoding="utf-8"
-        )
-        with (self.output_dir / "eval_trace.jsonl").open("a", encoding="utf-8") as trace:
-            trace.write(json.dumps(entry, default=str) + "\n")
+        try:
+            eval_dir = self.output_dir / "evals"
+            eval_dir.mkdir(exist_ok=True)
+        except OSError as exc:
+            warnings.warn(f"Could not create evals directory in {self.output_dir}: {exc}", RuntimeWarning, stacklevel=3)
+        self._best_effort_write(eval_dir / f"{entry['eval']}.json", json.dumps(entry, indent=2, default=str) + "\n")
+        try:
+            with (self.output_dir / "eval_trace.jsonl").open("a", encoding="utf-8") as trace:
+                trace.write(json.dumps(entry, default=str) + "\n")
+        except OSError as exc:
+            warnings.warn(
+                f"Could not append to eval_trace.jsonl in {self.output_dir}: {exc}", RuntimeWarning, stacklevel=3
+            )
         self._persist_summary()
 
     def _persist_summary(self) -> None:
         if self.output_dir is None:
             return
         result = self.result()
-        (self.output_dir / "summary.json").write_text(
-            json.dumps(result.to_dict(), indent=2, default=str) + "\n", encoding="utf-8"
+        self._best_effort_write(
+            self.output_dir / "summary.json", json.dumps(result.to_dict(), indent=2, default=str) + "\n"
         )
 
     def evaluate(

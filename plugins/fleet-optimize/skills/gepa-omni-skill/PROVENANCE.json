@@ -4,7 +4,7 @@
   "upstream": {
     "project": "gepa-ai/gepa",
     "repository": "https://github.com/gepa-ai/gepa",
-    "commit": "8a2bed96385202f69caaeb5327a843ed2f5ea225",
+    "commit": "ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309",
     "license": "MIT"
   },
   "adaptation": {

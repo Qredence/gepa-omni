@@ -8,7 +8,7 @@ Portions of the plugin-native runtime in:
 - `scripts/native_omni/runners.py`
 
 are adapted from the MIT-licensed GEPA project at the pinned upstream commit
-[`8a2bed96385202f69caaeb5327a843ed2f5ea225`](https://github.com/gepa-ai/gepa/tree/8a2bed96385202f69caaeb5327a843ed2f5ea225).
+[`ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309`](https://github.com/gepa-ai/gepa/tree/ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309).
 The source headers in those files repeat this provenance. Adaptation is limited
 to the task/evaluation primitives and runner/budget contracts; the
 plugin-native implementation is deliberately independent of an installed GEPA
