@@ -1,0 +1,77 @@
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/core.py
+  s_75d40a29dbeb59::t_125a5a94ae3c19 400
+  s_75d40a29dbeb59::t_2be88229c6678a 4
+  s_75d40a29dbeb59::t_544651d4383619 330-335,338
+  s_6fc45a3ba73c6e::t_862f9e407f4875 16
+  s_75d40a29dbeb59::t_49ec88429b513a 386-392,401-408,415-416
+  s_6fc45a3ba73c6e::t_c9507754cfb7a4 337,339-340
+  s_75d40a29dbeb59::t_b10522909d77aa 396-399
+plugins/fleet-optimize/skills/fleet-optimize-skill/SKILL.md
+  s_6fc45a3ba73c6e::t_aa878fdbf79875 31
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/omni_pipeline.py
+  s_75d40a29dbeb59::t_2b90e310d313e9 688-689,691-697,699-721,727-728,730
+  s_75d40a29dbeb59::t_51d84a54c2fb98 690,698,722-723,729
+  s_75d40a29dbeb59::t_6e79ffc144e043 873
+  s_75d40a29dbeb59::t_e10243b64fff1d 874-876
+  s_75d40a29dbeb59::t_1adef2df60e2b2 12
+pyproject.toml
+  s_6fc45a3ba73c6e::t_80b0bc73a62862 18
+plugins/fleet-optimize/skills/gepa-omni-skill/scripts/native_omni/runners.py
+  s_75d40a29dbeb59::t_1c7d9f2f12f631 4
+plugins/fleet-optimize/skills/gepa-omni-skill/SKILL.md
+  s_75d40a29dbeb59::t_bf63c76afd0f4e 165
+tests/test_omni_pipeline.py
+  s_75d40a29dbeb59::t_bd6ceb0f71a547 57,62,64
+  s_75d40a29dbeb59::t_6c846e1d9d1a43 7
+  s_75d40a29dbeb59::t_ca429f8ee407da 38-56,58-61,63,65-66
+plugins/fleet-optimize/skills/gepa-omni-skill/references/api.md
+  s_6fc45a3ba73c6e::t_c55ec5d8855d66 32-38
+  s_75d40a29dbeb59::t_c44e1735c069c4 85-91
+  s_6fc45a3ba73c6e::t_39cb70dd5a2982 92
+packages/gepa-omni/pyproject.toml
+  s_6fc45a3ba73c6e::t_3eb6595965aa63 12
+plugins/fleet-optimize/skills/fleet-optimize-skill/scripts/fleet_optimize.py
+  s_6fc45a3ba73c6e::t_1a927e3e81c521 117
+plugins/fleet-optimize/skills/gepa-omni-skill/THIRD_PARTY_NOTICES.md
+  s_75d40a29dbeb59::t_ad94a00095f0d1 11
+tests/test_native_core.py
+  s_75d40a29dbeb59::t_cad4085f6a1e24 8,11
+  s_75d40a29dbeb59::t_ce724d1058b728 180-231
+README.md
+  s_6fc45a3ba73c6e::t_38c524233489d5 191
+tests/test_api_contract.py
+  s_75d40a29dbeb59::t_3ae5bb177c952b 106,116,125
+tools/gepa_self_evaluate.py
+  s_6fc45a3ba73c6e::t_8b43d9d5c41b62 10
+plugins/fleet-optimize/skills/gepa-omni-skill/references/gotchas.md
+  s_6fc45a3ba73c6e::t_eacd029f4df3e4 66-74,83
+  s_75d40a29dbeb59::t_12207e92b6a983 75-82
+plugins/fleet-optimize/skills/gepa-omni-skill/PROVENANCE.json
+  s_75d40a29dbeb59::t_11d72e464ba107 7
+uv.lock
+  s_6fc45a3ba73c6e::t_60c2889f8d0df1 1293,1305,1320,3462,4322-4330
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "116af2ee0dba8b98013ad520ea7459226073f92b",
+  "prompts": {},
+  "sessions": {
+    "s_6fc45a3ba73c6e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1801a1f9-8628-4181-9df2-847b33eafe18",
+        "model": "z-ai/glm-5.3-flash"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    },
+    "s_75d40a29dbeb59": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "ef684093-880b-43d2-8198-34f37ef46d94",
+        "model": "z-ai/glm-5.3-flash"
+      },
+      "human_author": "Zachary BENSALEM <zachary@qredence.ai>"
+    }
+  }
+}
